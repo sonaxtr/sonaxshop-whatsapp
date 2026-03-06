@@ -1,29 +1,89 @@
+import axios from 'axios';
 import { whatsappApi } from '../../whatsapp/api';
-import { soapClient } from '../../ticimax/soap-client';
-import { xmlParser } from '../../ticimax/xml-parser';
 import { updateSession } from '../session';
 import { logger } from '../../utils/logger';
 
+interface MagazaInfo {
+  id: number;
+  ad: string;
+  adres: string;
+  telefon: string;
+  il: string;
+  ilce: string;
+  latitude: string;
+  longitude: string;
+  aktif: boolean;
+}
+
 // Cache for store data (refreshed every hour)
-let magazaCache: any[] = [];
+let magazaCache: MagazaInfo[] = [];
 let cacheTime = 0;
 const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 
-async function getMagazalar(): Promise<any[]> {
+/**
+ * Fetch stores from sonaxshop.com.tr REST API
+ * (SOAP GetMagazalar does NOT exist in Ticimax CustomServis WSDL)
+ */
+async function getMagazalar(): Promise<MagazaInfo[]> {
   if (magazaCache.length > 0 && Date.now() - cacheTime < CACHE_DURATION) {
     return magazaCache;
   }
 
   try {
-    const xml = await soapClient.getMagazalar();
-    magazaCache = await xmlParser.parseMagazalar(xml);
+    const response = await axios.get(
+      'https://sonaxshop.com.tr/api/Store/GetStoriesLite',
+      {
+        params: {
+          CountryID: -1,
+          CityID: null,
+          PageNo: 1,
+          PageSize: 150,
+        },
+        timeout: 15000,
+      }
+    );
+
+    const data = response.data;
+
+    if (data.isError || !data.magazalar) {
+      logger.error('GetStoriesLite error response', { errorMessage: data.errorMessage });
+      return magazaCache;
+    }
+
+    magazaCache = data.magazalar.map((m: any) => ({
+      id: m.id || 0,
+      ad: m.tanim || '',
+      adres: m.adres || '',
+      telefon: m.telefon || '',
+      il: m.il || '',
+      ilce: m.ilce || '',
+      latitude: m.latitude || '',
+      longitude: m.longitude || '',
+      aktif: m.aktif === true,
+    }));
+
     cacheTime = Date.now();
-    logger.info('Magazalar cache refreshed', { count: magazaCache.length });
+    logger.info('Magazalar cache refreshed (REST API)', { count: magazaCache.length });
     return magazaCache;
   } catch (error: any) {
-    logger.error('GetMagazalar error', { error: error.message });
+    logger.error('GetStoriesLite error', { error: error.message });
     return magazaCache; // Return stale cache on error
   }
+}
+
+/**
+ * Normalize Turkish characters for case-insensitive search
+ */
+function normalizeTurkish(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/i̇/g, 'i')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g');
 }
 
 export async function handleMagazaAction(from: string, input: string, menuState: string): Promise<void> {
@@ -33,8 +93,9 @@ export async function handleMagazaAction(from: string, input: string, menuState:
       await whatsappApi.sendText(from, '🔍 Uygulama merkezleri yükleniyor...');
 
       const magazalar = await getMagazalar();
+      const aktivMagazalar = magazalar.filter(m => m.aktif);
 
-      if (magazalar.length === 0) {
+      if (aktivMagazalar.length === 0) {
         await whatsappApi.sendText(from,
           `🏪 *Uygulama Merkezleri*\n\n` +
           `Uygulama merkezleri bilgisi şu an için mevcut değil.\n\n` +
@@ -42,21 +103,30 @@ export async function handleMagazaAction(from: string, input: string, menuState:
           `🔗 https://sonaxshop.com.tr/magazalarimiz`
         );
       } else {
-        let text = `🏪 *Uygulama Merkezlerimiz (${magazalar.filter(m => m.aktif).length} adet)*\n`;
-
-        for (const magaza of magazalar.filter(m => m.aktif).slice(0, 10)) {
-          text += `\n━━━━━━━━━━━━━━━\n`;
-          text += `📍 *${magaza.ad}*\n`;
-          if (magaza.il) text += `🏙 ${magaza.il}${magaza.ilce ? ` / ${magaza.ilce}` : ''}\n`;
-          if (magaza.adres) text += `📮 ${magaza.adres}\n`;
-          if (magaza.telefon) text += `📞 ${magaza.telefon}\n`;
-          if (magaza.calismaSaatleri) text += `🕐 ${magaza.calismaSaatleri}\n`;
-          if (magaza.latitude && magaza.longitude) {
-            text += `🗺 https://maps.google.com/?q=${magaza.latitude},${magaza.longitude}\n`;
-          }
+        // Send stores in batches to avoid WhatsApp message size limits
+        const batchSize = 5;
+        const batches = [];
+        for (let i = 0; i < aktivMagazalar.length; i += batchSize) {
+          batches.push(aktivMagazalar.slice(i, i + batchSize));
         }
 
-        await whatsappApi.sendText(from, text);
+        // First message with count
+        let firstText = `🏪 *Uygulama Merkezlerimiz (${aktivMagazalar.length} adet)*\n`;
+        for (const magaza of batches[0]) {
+          firstText += `\n━━━━━━━━━━━━━━━\n`;
+          firstText += formatMagaza(magaza);
+        }
+        await whatsappApi.sendText(from, firstText);
+
+        // Remaining batches
+        for (let i = 1; i < batches.length; i++) {
+          let text = '';
+          for (const magaza of batches[i]) {
+            text += `━━━━━━━━━━━━━━━\n`;
+            text += formatMagaza(magaza);
+          }
+          await whatsappApi.sendText(from, text.trim());
+        }
       }
     } catch (error: any) {
       logger.error('Magaza list error', { from, error: error.message });
@@ -79,13 +149,14 @@ export async function handleMagazaAction(from: string, input: string, menuState:
 
     try {
       const magazalar = await getMagazalar();
-      const searchTerm = input.toLowerCase().replace(/i̇/g, 'i');
+      const searchTerm = normalizeTurkish(input.trim());
 
       const filteredMagazalar = magazalar.filter(m =>
         m.aktif && (
-          m.il.toLowerCase().replace(/i̇/g, 'i').includes(searchTerm) ||
-          m.ilce.toLowerCase().replace(/i̇/g, 'i').includes(searchTerm) ||
-          m.ad.toLowerCase().replace(/i̇/g, 'i').includes(searchTerm)
+          normalizeTurkish(m.il).includes(searchTerm) ||
+          normalizeTurkish(m.ilce).includes(searchTerm) ||
+          normalizeTurkish(m.ad).includes(searchTerm) ||
+          normalizeTurkish(m.adres).includes(searchTerm)
         )
       );
 
@@ -97,16 +168,14 @@ export async function handleMagazaAction(from: string, input: string, menuState:
       } else {
         let text = `📍 *"${input}" bölgesinde ${filteredMagazalar.length} merkez bulundu:*\n`;
 
-        for (const magaza of filteredMagazalar.slice(0, 5)) {
+        for (const magaza of filteredMagazalar.slice(0, 10)) {
           text += `\n━━━━━━━━━━━━━━━\n`;
-          text += `📍 *${magaza.ad}*\n`;
-          if (magaza.il) text += `🏙 ${magaza.il}${magaza.ilce ? ` / ${magaza.ilce}` : ''}\n`;
-          if (magaza.adres) text += `📮 ${magaza.adres}\n`;
-          if (magaza.telefon) text += `📞 ${magaza.telefon}\n`;
-          if (magaza.calismaSaatleri) text += `🕐 ${magaza.calismaSaatleri}\n`;
-          if (magaza.latitude && magaza.longitude) {
-            text += `🗺 https://maps.google.com/?q=${magaza.latitude},${magaza.longitude}\n`;
-          }
+          text += formatMagaza(magaza);
+        }
+
+        if (filteredMagazalar.length > 10) {
+          text += `\n... ve ${filteredMagazalar.length - 10} merkez daha.`;
+          text += `\n🔗 https://sonaxshop.com.tr/magazalarimiz`;
         }
 
         await whatsappApi.sendText(from, text);
@@ -122,4 +191,15 @@ export async function handleMagazaAction(from: string, input: string, menuState:
     ]);
     updateSession(from, { currentMenu: 'magaza_menu' });
   }
+}
+
+function formatMagaza(magaza: MagazaInfo): string {
+  let text = `📍 *${magaza.ad}*\n`;
+  if (magaza.il) text += `🏙 ${magaza.il}${magaza.ilce ? ` / ${magaza.ilce}` : ''}\n`;
+  if (magaza.adres) text += `📮 ${magaza.adres}\n`;
+  if (magaza.telefon) text += `📞 ${magaza.telefon}\n`;
+  if (magaza.latitude && magaza.longitude) {
+    text += `🗺 https://maps.google.com/?q=${magaza.latitude},${magaza.longitude}\n`;
+  }
+  return text;
 }
