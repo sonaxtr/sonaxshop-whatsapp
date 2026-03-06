@@ -145,6 +145,10 @@ class ChatbotRouter {
         await handleMagazaAction(from, input, 'magaza_sorgula_input');
         break;
 
+      case 'magaza_secim':
+        await handleMagazaAction(from, input, 'magaza_secim');
+        break;
+
       default:
         // Unknown state, show welcome
         updateSession(from, { currentMenu: 'welcome' });
