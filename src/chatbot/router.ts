@@ -36,7 +36,14 @@ class ChatbotRouter {
 
     // Check for global commands
     if (this.isResetCommand(input)) {
-      updateSession(from, { currentMenu: 'welcome', data: {} });
+      // Preserve member data (uyeId, isim, soyisim, mail) across resets
+      const memberData = {
+        uyeId: session?.data?.uyeId,
+        isim: session?.data?.isim,
+        soyisim: session?.data?.soyisim,
+        mail: session?.data?.mail,
+      };
+      updateSession(from, { currentMenu: 'welcome', data: memberData });
       await this.showWelcome(from);
       return;
     }
@@ -237,6 +244,7 @@ class ChatbotRouter {
   async showWelcome(from: string): Promise<void> {
     const session = getSession(from);
     const isim = session?.data?.isim;
+    logger.info('showWelcome', { from, isim, uyeId: session?.data?.uyeId, hasData: !!session?.data });
 
     let welcomeText: string;
     if (isim) {
