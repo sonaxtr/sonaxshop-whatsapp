@@ -145,7 +145,41 @@ export class TicimaxSoapClient {
   // ============================
 
   /**
-   * Look up a member by phone number
+   * Quick lookup: get member ID by phone number
+   */
+  async selectUyeIdByTel(telefon: string): Promise<string> {
+    const body = `<tem:SelectUyeIdByMailOrTel>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:uyeMail></tem:uyeMail>
+      <tem:tel>${this.xmlEscape(telefon)}</tem:tel>
+      <tem:uyelikTipi>0</tem:uyelikTipi>
+    </tem:SelectUyeIdByMailOrTel>`;
+
+    return this.request(config.ticimax.endpoints.uye, 'SelectUyeIdByMailOrTel', body);
+  }
+
+  /**
+   * Get member details by UyeID
+   */
+  async selectUyelerById(uyeId: number): Promise<string> {
+    const body = `<tem:SelectUyeler>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:filtre>
+        <ns:UyeID>${uyeId}</ns:UyeID>
+      </tem:filtre>
+      <tem:sayfalama>
+        <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SayfaNo>1</ns:SayfaNo>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+      </tem:sayfalama>
+    </tem:SelectUyeler>`;
+
+    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
+  }
+
+  /**
+   * Look up a member by phone number (filter search)
    */
   async selectUyeler(telefon: string): Promise<string> {
     const body = `<tem:SelectUyeler>

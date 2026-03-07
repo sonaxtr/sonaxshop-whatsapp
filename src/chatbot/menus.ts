@@ -9,7 +9,7 @@ import { ListSection, ReplyButton } from '../whatsapp/types';
 // ANA MENÜ — Kanal Seçimi
 // ============================
 export const WELCOME_TEXT =
-  `Merhaba, SonaxShop'a hoş geldiniz! 🧴\n\n` +
+  `Merhaba, Sonax Türkiye'ye hoş geldiniz! 🧴\n\n` +
   `Dijital asistanınız olarak size yardımcı olacağım.\n\n` +
   `Size destek olabilmem için yardım almak istediğiniz alışveriş kanalını seçiniz. 👇`;
 

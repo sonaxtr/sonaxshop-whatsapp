@@ -196,6 +196,28 @@ export class TicimaxXmlParser {
     }
   }
 
+  /**
+   * Parse member ID lookup results (ArrayOfint)
+   */
+  async parseUyeIds(xml: string): Promise<number[]> {
+    try {
+      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const body = this.getBody(result);
+      const response = body?.SelectUyeIdByMailOrTelResponse?.SelectUyeIdByMailOrTelResult;
+
+      if (!response) return [];
+
+      let ids = response?.int;
+      if (!ids) return [];
+      if (!Array.isArray(ids)) ids = [ids];
+
+      return ids.map((id: any) => parseInt(id) || 0).filter((id: number) => id > 0);
+    } catch (error: any) {
+      logger.error('Parse uye ids error', { error: error.message });
+      return [];
+    }
+  }
+
   // ============================
   // HELPERS
   // ============================
