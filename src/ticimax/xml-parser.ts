@@ -12,12 +12,13 @@ export class TicimaxXmlParser {
     try {
       const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
       const body = this.getBody(result);
-      const response = body?.SelectUrunlerResponse?.SelectUrunlerResult;
+      const response = body?.SelectUrunResponse?.SelectUrunResult ||
+        body?.SelectUrunlerResponse?.SelectUrunlerResult;
 
       if (!response) return [];
 
-      // Handle WebUrunKarti array
-      let urunler = response?.Urunler?.WebUrunKarti || response?.WebUrunKarti;
+      // Handle UrunKarti / WebUrunKarti array
+      let urunler = response?.UrunKarti || response?.Urunler?.WebUrunKarti || response?.WebUrunKarti;
       if (!urunler) return [];
       if (!Array.isArray(urunler)) urunler = [urunler];
 
@@ -49,7 +50,7 @@ export class TicimaxXmlParser {
 
       if (!response) return [];
 
-      let siparisler = response?.Siparisler?.WebSiparis || response?.WebSiparis;
+      let siparisler = response?.WebSiparis || response?.Siparisler?.WebSiparis;
       if (!siparisler) return [];
       if (!Array.isArray(siparisler)) siparisler = [siparisler];
 
@@ -147,7 +148,7 @@ export class TicimaxXmlParser {
 
       if (!response) return [];
 
-      let uyeler = response?.Uyeler?.WebUye || response?.WebUye;
+      let uyeler = response?.Uye || response?.Uyeler?.WebUye || response?.WebUye;
       if (!uyeler) return [];
       if (!Array.isArray(uyeler)) uyeler = [uyeler];
 
@@ -176,7 +177,7 @@ export class TicimaxXmlParser {
 
       if (!response) return [];
 
-      let kategoriler = response?.Kategoriler?.WebKategori || response?.WebKategori;
+      let kategoriler = response?.Kategori || response?.Kategoriler?.WebKategori || response?.WebKategori;
       if (!kategoriler) return [];
       if (!Array.isArray(kategoriler)) kategoriler = [kategoriler];
 

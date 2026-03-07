@@ -22,7 +22,7 @@ export class TicimaxSoapClient {
     const soapAction = `http://tempuri.org/I${this.getServiceName(endpoint)}/${action}`;
 
     const envelope = `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/" xmlns:ns="http://schemas.datacontract.org/2004/07/TiciMax.Entegrasyon.Servisler">
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/" xmlns:ns="http://schemas.datacontract.org/2004/07/">
   <soapenv:Header/>
   <soapenv:Body>
     ${body}
@@ -62,25 +62,25 @@ export class TicimaxSoapClient {
   // ============================
 
   /**
-   * Search products by name, barcode, or stock code
+   * Search products by barcode or stock code
    */
   async selectUrunler(searchText: string, page: number = 1, pageSize: number = 5): Promise<string> {
-    const body = `<tem:SelectUrunler>
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
-        <ns:AktifMi>1</ns:AktifMi>
+        <ns:Aktif>1</ns:Aktif>
         <ns:Barkod>${this.xmlEscape(searchText)}</ns:Barkod>
-        <ns:UrunAdi>${this.xmlEscape(searchText)}</ns:UrunAdi>
+        <ns:StokKodu>${this.xmlEscape(searchText)}</ns:StokKodu>
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>${(page - 1) * pageSize}</ns:BaslangicIndex>
         <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
-        <ns:SiralamaDeger>Sira</ns:SiralamaDeger>
+        <ns:SiralamaDegeri>Sira</ns:SiralamaDegeri>
         <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
       </tem:s>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
-    </tem:SelectUrunler>`;
+    </tem:SelectUrun>`;
 
-    return this.request(config.ticimax.endpoints.urun, 'SelectUrunler', body);
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
   }
 
   // ============================
@@ -92,30 +92,22 @@ export class TicimaxSoapClient {
    */
   async selectSiparis(siparisId?: number, telefon?: string): Promise<string> {
     const body = `<tem:SelectSiparis>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
-        <ns:EntegrasyonParams>
-          <ns:AlanDeger></ns:AlanDeger>
-          <ns:Deger></ns:Deger>
-          <ns:EntegrasyonKodu></ns:EntegrasyonKodu>
-          <ns:EntegrasyonParamsAktif>false</ns:EntegrasyonParamsAktif>
-          <ns:TabloAlan></ns:TabloAlan>
-          <ns:Tanim></ns:Tanim>
-        </ns:EntegrasyonParams>
         <ns:IptalEdilmisUrunler>true</ns:IptalEdilmisUrunler>
         <ns:OdemeDurumu>-1</ns:OdemeDurumu>
         <ns:OdemeTipi>-1</ns:OdemeTipi>
         <ns:SiparisDurumu>-1</ns:SiparisDurumu>
         <ns:SiparisID>${siparisId || -1}</ns:SiparisID>
         <ns:TedarikciID>-1</ns:TedarikciID>
-        ${telefon ? `<ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>` : ''}
+        ${telefon ? `<ns:UyeTelefon>${this.xmlEscape(telefon)}</ns:UyeTelefon>` : ''}
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
         <ns:KayitSayisi>5</ns:KayitSayisi>
-        <ns:SiralamaDeger>ID</ns:SiralamaDeger>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
         <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:s>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
     </tem:SelectSiparis>`;
 
     return this.request(config.ticimax.endpoints.siparis, 'SelectSiparis', body);
@@ -157,16 +149,16 @@ export class TicimaxSoapClient {
    */
   async selectUyeler(telefon: string): Promise<string> {
     const body = `<tem:SelectUyeler>
-      <tem:f>
-        <ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>
-      </tem:f>
-      <tem:s>
-        <ns:BaslangicIndex>0</ns:BaslangicIndex>
-        <ns:KayitSayisi>1</ns:KayitSayisi>
-        <ns:SiralamaDeger>ID</ns:SiralamaDeger>
-        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
-      </tem:s>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:filtre>
+        <ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>
+      </tem:filtre>
+      <tem:sayfalama>
+        <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SayfaNo>1</ns:SayfaNo>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+      </tem:sayfalama>
     </tem:SelectUyeler>`;
 
     return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
@@ -179,19 +171,12 @@ export class TicimaxSoapClient {
   /**
    * Get product categories
    */
-  async selectKategoriler(ustKategoriId: number = -1): Promise<string> {
+  async selectKategoriler(ustKategoriId: number = 0): Promise<string> {
     const body = `<tem:SelectKategori>
-      <tem:f>
-        <ns:AktifMi>1</ns:AktifMi>
-        <ns:UstKategoriID>${ustKategoriId}</ns:UstKategoriID>
-      </tem:f>
-      <tem:s>
-        <ns:BaslangicIndex>0</ns:BaslangicIndex>
-        <ns:KayitSayisi>50</ns:KayitSayisi>
-        <ns:SiralamaDeger>Sira</ns:SiralamaDeger>
-        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
-      </tem:s>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:kategoriID>0</tem:kategoriID>
+      <tem:dil></tem:dil>
+      <tem:parentID>${ustKategoriId}</tem:parentID>
     </tem:SelectKategori>`;
 
     return this.request(config.ticimax.endpoints.urun, 'SelectKategori', body);
@@ -201,21 +186,21 @@ export class TicimaxSoapClient {
    * Get products by category ID
    */
   async selectUrunlerByKategori(kategoriId: number, page: number = 1, pageSize: number = 5): Promise<string> {
-    const body = `<tem:SelectUrunler>
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
-        <ns:AktifMi>1</ns:AktifMi>
-        <ns:KategoriId>${kategoriId}</ns:KategoriId>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:KategoriID>${kategoriId}</ns:KategoriID>
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>${(page - 1) * pageSize}</ns:BaslangicIndex>
         <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
-        <ns:SiralamaDeger>Sira</ns:SiralamaDeger>
+        <ns:SiralamaDegeri>Sira</ns:SiralamaDegeri>
         <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
       </tem:s>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
-    </tem:SelectUrunler>`;
+    </tem:SelectUrun>`;
 
-    return this.request(config.ticimax.endpoints.urun, 'SelectUrunler', body);
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
   }
 
   /**
@@ -223,15 +208,8 @@ export class TicimaxSoapClient {
    */
   async selectSiparisByUyeId(uyeId: number): Promise<string> {
     const body = `<tem:SelectSiparis>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
-        <ns:EntegrasyonParams>
-          <ns:AlanDeger></ns:AlanDeger>
-          <ns:Deger></ns:Deger>
-          <ns:EntegrasyonKodu></ns:EntegrasyonKodu>
-          <ns:EntegrasyonParamsAktif>false</ns:EntegrasyonParamsAktif>
-          <ns:TabloAlan></ns:TabloAlan>
-          <ns:Tanim></ns:Tanim>
-        </ns:EntegrasyonParams>
         <ns:IptalEdilmisUrunler>true</ns:IptalEdilmisUrunler>
         <ns:OdemeDurumu>-1</ns:OdemeDurumu>
         <ns:OdemeTipi>-1</ns:OdemeTipi>
@@ -243,10 +221,9 @@ export class TicimaxSoapClient {
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
         <ns:KayitSayisi>5</ns:KayitSayisi>
-        <ns:SiralamaDeger>ID</ns:SiralamaDeger>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
         <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:s>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
     </tem:SelectSiparis>`;
 
     return this.request(config.ticimax.endpoints.siparis, 'SelectSiparis', body);
