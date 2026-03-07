@@ -248,8 +248,9 @@ class ChatbotRouter {
 
     let welcomeText: string;
     if (isim) {
+      const soyisim = session?.data?.soyisim || '';
       welcomeText =
-        `Merhaba ${isim} Bey/Hanım, Sonax Türkiye'ye hoş geldiniz! 🧴\n\n` +
+        `Merhaba ${isim} ${soyisim}, Sonax Türkiye'ye hoş geldiniz! 🧴\n\n` +
         `Dijital asistanınız olarak size yardımcı olacağım.\n\n` +
         `Size destek olabilmem için yardım almak istediğiniz alışveriş kanalını seçiniz. 👇`;
     } else {
@@ -350,7 +351,8 @@ class ChatbotRouter {
           await whatsappApi.sendText(from, 'Henüz bir siparişiniz bulunmamaktadır.');
         } else {
           const isim = session?.data?.isim || '';
-          let header = `📦 *${isim} Bey/Hanım, son siparişleriniz:*\n`;
+          const soyisim = session?.data?.soyisim || '';
+          let header = `📦 *${isim} ${soyisim}, son siparişleriniz:*\n`;
 
           for (const siparis of siparisler.slice(0, 5)) {
             header += `\n━━━━━━━━━━━━━━━\n`;
