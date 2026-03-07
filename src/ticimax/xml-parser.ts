@@ -1,5 +1,12 @@
-import { parseStringPromise } from 'xml2js';
+import { parseStringPromise, processors } from 'xml2js';
 import { logger } from '../utils/logger';
+
+/** Shared xml2js options — strips namespace prefixes (a:Uye → Uye, s:Envelope → Envelope) */
+const XML_PARSE_OPTIONS = {
+  explicitArray: false,
+  ignoreAttrs: true,
+  tagNameProcessors: [processors.stripPrefix],
+};
 
 /**
  * XML parser for Ticimax SOAP responses
@@ -10,7 +17,7 @@ export class TicimaxXmlParser {
    */
   async parseUrunler(xml: string): Promise<UrunResult[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectUrunResponse?.SelectUrunResult ||
         body?.SelectUrunlerResponse?.SelectUrunlerResult;
@@ -44,7 +51,7 @@ export class TicimaxXmlParser {
    */
   async parseSiparisler(xml: string): Promise<SiparisResult[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectSiparisResponse?.SelectSiparisResult;
 
@@ -81,7 +88,7 @@ export class TicimaxXmlParser {
    */
   async parseMagazalar(xml: string): Promise<MagazaResult[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.GetMagazalarResponse?.GetMagazalarResult;
 
@@ -114,7 +121,7 @@ export class TicimaxXmlParser {
    */
   async parseHediyeCeki(xml: string): Promise<HediyeCekiResult | null> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectHediyeCekiResponse?.SelectHediyeCekiResult;
 
@@ -142,7 +149,7 @@ export class TicimaxXmlParser {
    */
   async parseUyeler(xml: string): Promise<UyeResult[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectUyelerResponse?.SelectUyelerResult;
 
@@ -171,7 +178,7 @@ export class TicimaxXmlParser {
    */
   async parseKategoriler(xml: string): Promise<KategoriResult[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectKategoriResponse?.SelectKategoriResult;
 
@@ -201,7 +208,7 @@ export class TicimaxXmlParser {
    */
   async parseUyeIds(xml: string): Promise<number[]> {
     try {
-      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
       const body = this.getBody(result);
       const response = body?.SelectUyeIdByMailOrTelResponse?.SelectUyeIdByMailOrTelResult;
 
@@ -223,7 +230,8 @@ export class TicimaxXmlParser {
   // ============================
 
   private getBody(result: any): any {
-    return result?.['s:Envelope']?.['s:Body'] ||
+    return result?.Envelope?.Body ||
+      result?.['s:Envelope']?.['s:Body'] ||
       result?.['soap:Envelope']?.['soap:Body'] ||
       result?.['soapenv:Envelope']?.['soapenv:Body'] ||
       null;
