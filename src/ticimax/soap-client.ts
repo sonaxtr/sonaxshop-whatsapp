@@ -149,6 +149,110 @@ export class TicimaxSoapClient {
   }
 
   // ============================
+  // ÜYE SERVİS
+  // ============================
+
+  /**
+   * Look up a member by phone number
+   */
+  async selectUyeler(telefon: string): Promise<string> {
+    const body = `<tem:SelectUyeler>
+      <tem:f>
+        <ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SiralamaDeger>ID</ns:SiralamaDeger>
+        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+      </tem:s>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+    </tem:SelectUyeler>`;
+
+    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
+  }
+
+  // ============================
+  // KATEGORİ (ÜRÜN SERVİS)
+  // ============================
+
+  /**
+   * Get product categories
+   */
+  async selectKategoriler(ustKategoriId: number = -1): Promise<string> {
+    const body = `<tem:SelectKategori>
+      <tem:f>
+        <ns:AktifMi>1</ns:AktifMi>
+        <ns:UstKategoriID>${ustKategoriId}</ns:UstKategoriID>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>50</ns:KayitSayisi>
+        <ns:SiralamaDeger>Sira</ns:SiralamaDeger>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
+      </tem:s>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+    </tem:SelectKategori>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectKategori', body);
+  }
+
+  /**
+   * Get products by category ID
+   */
+  async selectUrunlerByKategori(kategoriId: number, page: number = 1, pageSize: number = 5): Promise<string> {
+    const body = `<tem:SelectUrunler>
+      <tem:f>
+        <ns:AktifMi>1</ns:AktifMi>
+        <ns:KategoriId>${kategoriId}</ns:KategoriId>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>${(page - 1) * pageSize}</ns:BaslangicIndex>
+        <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
+        <ns:SiralamaDeger>Sira</ns:SiralamaDeger>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
+      </tem:s>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+    </tem:SelectUrunler>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrunler', body);
+  }
+
+  /**
+   * Get orders by member ID (UyeID)
+   */
+  async selectSiparisByUyeId(uyeId: number): Promise<string> {
+    const body = `<tem:SelectSiparis>
+      <tem:f>
+        <ns:EntegrasyonParams>
+          <ns:AlanDeger></ns:AlanDeger>
+          <ns:Deger></ns:Deger>
+          <ns:EntegrasyonKodu></ns:EntegrasyonKodu>
+          <ns:EntegrasyonParamsAktif>false</ns:EntegrasyonParamsAktif>
+          <ns:TabloAlan></ns:TabloAlan>
+          <ns:Tanim></ns:Tanim>
+        </ns:EntegrasyonParams>
+        <ns:IptalEdilmisUrunler>true</ns:IptalEdilmisUrunler>
+        <ns:OdemeDurumu>-1</ns:OdemeDurumu>
+        <ns:OdemeTipi>-1</ns:OdemeTipi>
+        <ns:SiparisDurumu>-1</ns:SiparisDurumu>
+        <ns:SiparisID>-1</ns:SiparisID>
+        <ns:TedarikciID>-1</ns:TedarikciID>
+        <ns:UyeID>${uyeId}</ns:UyeID>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>5</ns:KayitSayisi>
+        <ns:SiralamaDeger>ID</ns:SiralamaDeger>
+        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+      </tem:s>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+    </tem:SelectSiparis>`;
+
+    return this.request(config.ticimax.endpoints.siparis, 'SelectSiparis', body);
+  }
+
+  // ============================
   // HELPERS
   // ============================
 

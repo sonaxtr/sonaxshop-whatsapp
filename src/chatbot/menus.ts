@@ -31,6 +31,7 @@ export const ONLINE_MENU_SECTIONS: ListSection[] = [
       { id: 'menu_siparis', title: 'Sipariş Hakkında', description: 'Sipariş sorgulama ve takip' },
       { id: 'menu_iade', title: 'İade ve Değişim', description: 'İade süreci bilgilendirme' },
       { id: 'menu_urun', title: 'Ürün Bilgisi', description: 'Ürün arama, stok ve fiyat' },
+      { id: 'menu_kategori', title: 'Kategoriler', description: 'Kategorilere göre ürün gezinme' },
       { id: 'menu_kampanya', title: 'Kampanyalar', description: 'Güncel kampanyalar ve hediye çeki' },
       { id: 'menu_odeme', title: 'Ödeme ve Taksitlendirme', description: 'Ödeme yöntemleri ve IBAN' },
       { id: 'menu_uyelik', title: 'Üyelik', description: 'Üyelik bilgileri' },

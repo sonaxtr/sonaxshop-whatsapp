@@ -2,11 +2,14 @@ import { WebhookMessage } from '../whatsapp/types';
 import { whatsappApi } from '../whatsapp/api';
 import { logger } from '../utils/logger';
 import { getSession, createSession, updateSession } from './session';
+import { soapClient } from '../ticimax/soap-client';
+import { xmlParser } from '../ticimax/xml-parser';
 import * as menus from './menus';
 import { handleSiparisAction } from './handlers/siparis';
 import { handleUrunAction } from './handlers/urun';
 import { handleKampanyaAction } from './handlers/kampanya';
 import { handleMagazaAction } from './handlers/magaza';
+import { handleKategoriAction } from './handlers/kategori';
 
 /**
  * Chatbot message router — State machine that manages menu navigation
@@ -23,6 +26,8 @@ class ChatbotRouter {
     let session = getSession(from);
     if (!session) {
       session = createSession(from, name);
+      // Look up member by phone number
+      await this.lookupMember(from);
     }
 
     // Extract user input
@@ -32,7 +37,7 @@ class ChatbotRouter {
     // Check for global commands
     if (this.isResetCommand(input)) {
       updateSession(from, { currentMenu: 'welcome', data: {} });
-      await this.showWelcome(from, name);
+      await this.showWelcome(from);
       return;
     }
 
@@ -43,6 +48,60 @@ class ChatbotRouter {
       logger.error('Router error', { from, error: error.message });
       await whatsappApi.sendText(from, 'Bir hata oluştu. Lütfen tekrar deneyin veya "merhaba" yazın.');
     }
+  }
+
+  /**
+   * Look up member by WhatsApp phone number and store in session
+   */
+  private async lookupMember(from: string): Promise<void> {
+    try {
+      // WhatsApp sends phone as 905xxxxxxxxx, try multiple formats
+      const variants = this.getPhoneVariants(from);
+
+      for (const phone of variants) {
+        const xml = await soapClient.selectUyeler(phone);
+        const uyeler = await xmlParser.parseUyeler(xml);
+
+        if (uyeler.length > 0) {
+          const uye = uyeler[0];
+          updateSession(from, {
+            data: {
+              uyeId: uye.id,
+              isim: uye.isim,
+              soyisim: uye.soyisim,
+              mail: uye.mail,
+            },
+          });
+          logger.info('Member found', { from, uyeId: uye.id, isim: uye.isim });
+          return;
+        }
+      }
+
+      logger.info('Member not found', { from });
+    } catch (error: any) {
+      logger.error('Member lookup error', { from, error: error.message });
+    }
+  }
+
+  /**
+   * Generate phone number variants for lookup
+   * WhatsApp: 905321234567 -> try 05321234567, 5321234567, 905321234567
+   */
+  private getPhoneVariants(phone: string): string[] {
+    const variants: string[] = [];
+    const cleaned = phone.replace(/\D/g, '');
+
+    if (cleaned.startsWith('90') && cleaned.length >= 12) {
+      const local = cleaned.substring(2); // 5321234567
+      variants.push(`0${local}`);  // 05321234567
+      variants.push(local);        // 5321234567
+      variants.push(cleaned);      // 905321234567
+    } else {
+      variants.push(cleaned);
+      if (!cleaned.startsWith('0')) variants.push(`0${cleaned}`);
+    }
+
+    return variants;
   }
 
   /**
@@ -81,12 +140,12 @@ class ChatbotRouter {
   private async route(from: string, name: string, currentMenu: string, input: string, message: WebhookMessage): Promise<void> {
     // Handle navigation shortcuts
     if (input === 'menu_ana') {
-      updateSession(from, { currentMenu: 'welcome', data: {} });
-      await this.showWelcome(from, name);
+      updateSession(from, { currentMenu: 'welcome' });
+      await this.showWelcome(from);
       return;
     }
     if (input === 'menu_ust') {
-      updateSession(from, { currentMenu: 'online_menu', data: {} });
+      updateSession(from, { currentMenu: 'online_menu' });
       await this.showOnlineMenu(from);
       return;
     }
@@ -149,10 +208,18 @@ class ChatbotRouter {
         await handleMagazaAction(from, input, 'magaza_secim');
         break;
 
+      case 'kategori_menu':
+        await handleKategoriAction(from, input, 'kategori_menu');
+        break;
+
+      case 'kategori_urunler':
+        await handleKategoriAction(from, input, 'kategori_urunler');
+        break;
+
       default:
         // Unknown state, show welcome
         updateSession(from, { currentMenu: 'welcome' });
-        await this.showWelcome(from, name);
+        await this.showWelcome(from);
         break;
     }
   }
@@ -161,14 +228,26 @@ class ChatbotRouter {
   // WELCOME & CHANNEL
   // ============================
 
-  async showWelcome(from: string, name: string): Promise<void> {
-    const welcomeText = menus.WELCOME_TEXT.replace('SonaxShop', 'SonaxShop');
+  async showWelcome(from: string): Promise<void> {
+    const session = getSession(from);
+    const isim = session?.data?.isim;
+
+    let welcomeText: string;
+    if (isim) {
+      welcomeText =
+        `Merhaba ${isim} Bey/Hanım, SonaxShop'a hoş geldiniz! 🧴\n\n` +
+        `Dijital asistanınız olarak size yardımcı olacağım.\n\n` +
+        `Size destek olabilmem için yardım almak istediğiniz alışveriş kanalını seçiniz. 👇`;
+    } else {
+      welcomeText = menus.WELCOME_TEXT;
+    }
+
     await whatsappApi.sendButtons(from, welcomeText, menus.CHANNEL_BUTTONS);
     updateSession(from, { currentMenu: 'channel_select' });
   }
 
   private async handleWelcome(from: string, name: string, input: string): Promise<void> {
-    await this.showWelcome(from, name);
+    await this.showWelcome(from);
   }
 
   private async handleChannelSelect(from: string, name: string, input: string): Promise<void> {
@@ -177,7 +256,7 @@ class ChatbotRouter {
     } else if (input === 'channel_magaza') {
       await this.showMagazaMenu(from);
     } else {
-      await this.showWelcome(from, name);
+      await this.showWelcome(from);
     }
   }
 
@@ -199,8 +278,7 @@ class ChatbotRouter {
   private async handleOnlineMenu(from: string, input: string): Promise<void> {
     switch (input) {
       case 'menu_siparis':
-        await whatsappApi.sendList(from, menus.SIPARIS_MENU_TEXT, 'Seçenekler', menus.SIPARIS_MENU_SECTIONS, '📦 Sipariş');
-        updateSession(from, { currentMenu: 'siparis_menu' });
+        await this.handleSiparisEntry(from);
         break;
       case 'menu_iade':
         await whatsappApi.sendList(from, menus.IADE_MENU_TEXT, 'Seçenekler', menus.IADE_MENU_SECTIONS, '🔄 İade ve Değişim');
@@ -209,6 +287,9 @@ class ChatbotRouter {
       case 'menu_urun':
         await whatsappApi.sendList(from, menus.URUN_MENU_TEXT, 'Seçenekler', menus.URUN_MENU_SECTIONS, '📦 Ürün Bilgisi');
         updateSession(from, { currentMenu: 'urun_menu' });
+        break;
+      case 'menu_kategori':
+        await handleKategoriAction(from, 'root', 'kategori_menu');
         break;
       case 'menu_kampanya':
         await whatsappApi.sendList(from, menus.KAMPANYA_MENU_TEXT, 'Seçenekler', menus.KAMPANYA_MENU_SECTIONS, '🎁 Kampanyalar');
@@ -233,8 +314,60 @@ class ChatbotRouter {
   }
 
   // ============================
-  // SİPARİŞ MENU
+  // SİPARİŞ — AUTO QUERY BY MEMBER
   // ============================
+
+  /**
+   * If member is known, auto-fetch their recent orders. Otherwise show manual menu.
+   */
+  private async handleSiparisEntry(from: string): Promise<void> {
+    const session = getSession(from);
+    const uyeId = session?.data?.uyeId;
+
+    if (uyeId) {
+      // Member found — auto-fetch recent orders
+      await whatsappApi.sendText(from, '🔍 Siparişleriniz sorgulanıyor...');
+
+      try {
+        const xml = await soapClient.selectSiparisByUyeId(uyeId);
+        const siparisler = await xmlParser.parseSiparisler(xml);
+
+        if (siparisler.length === 0) {
+          await whatsappApi.sendText(from, 'Henüz bir siparişiniz bulunmamaktadır.');
+        } else {
+          const isim = session?.data?.isim || '';
+          let header = `📦 *${isim} Bey/Hanım, son siparişleriniz:*\n`;
+
+          for (const siparis of siparisler.slice(0, 5)) {
+            header += `\n━━━━━━━━━━━━━━━\n`;
+            header += `📦 *Sipariş #${siparis.siparisNo}*\n`;
+            header += `📅 Tarih: ${formatDate(siparis.tarih)}\n`;
+            header += `📊 Durum: ${siparis.durum}\n`;
+            header += `💰 Tutar: ${siparis.toplamTutar.toFixed(2)} TL\n`;
+            if (siparis.kargoTakipNo) {
+              header += `🚚 Kargo: ${siparis.kargoFirma} - ${siparis.kargoTakipNo}\n`;
+              if (siparis.kargoTakipUrl) {
+                header += `🔗 Takip: ${siparis.kargoTakipUrl}\n`;
+              }
+            }
+          }
+
+          await whatsappApi.sendText(from, header);
+        }
+      } catch (error: any) {
+        logger.error('Auto siparis query error', { from, uyeId, error: error.message });
+        await whatsappApi.sendText(from, '❌ Siparişler sorgulanırken hata oluştu.');
+      }
+
+      // Show siparis sub-menu for further actions
+      await whatsappApi.sendList(from, 'Başka bir sipariş işlemi yapmak ister misiniz?', 'Seçenekler', menus.SIPARIS_MENU_SECTIONS, '📦 Sipariş');
+      updateSession(from, { currentMenu: 'siparis_menu' });
+    } else {
+      // Member not found — show manual menu
+      await whatsappApi.sendList(from, menus.SIPARIS_MENU_TEXT, 'Seçenekler', menus.SIPARIS_MENU_SECTIONS, '📦 Sipariş');
+      updateSession(from, { currentMenu: 'siparis_menu' });
+    }
+  }
 
   private async handleSiparisMenu(from: string, input: string, message: WebhookMessage): Promise<void> {
     switch (input) {
@@ -388,6 +521,15 @@ class ChatbotRouter {
       { type: 'reply', reply: { id: 'menu_ust', title: 'Üst Menü ⬆️' } },
       { type: 'reply', reply: { id: 'menu_ana', title: 'Ana Menü 🏠' } },
     ]);
+  }
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return dateStr;
   }
 }
 

@@ -136,6 +136,65 @@ export class TicimaxXmlParser {
     }
   }
 
+  /**
+   * Parse member lookup results
+   */
+  async parseUyeler(xml: string): Promise<UyeResult[]> {
+    try {
+      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const body = this.getBody(result);
+      const response = body?.SelectUyelerResponse?.SelectUyelerResult;
+
+      if (!response) return [];
+
+      let uyeler = response?.Uyeler?.WebUye || response?.WebUye;
+      if (!uyeler) return [];
+      if (!Array.isArray(uyeler)) uyeler = [uyeler];
+
+      return uyeler.map((u: any) => ({
+        id: parseInt(u.ID) || 0,
+        isim: u.Isim || '',
+        soyisim: u.Soyisim || '',
+        mail: u.Mail || '',
+        cepTelefonu: u.CepTelefonu || '',
+        telefon: u.Telefon || '',
+      }));
+    } catch (error: any) {
+      logger.error('Parse uyeler error', { error: error.message });
+      return [];
+    }
+  }
+
+  /**
+   * Parse category results
+   */
+  async parseKategoriler(xml: string): Promise<KategoriResult[]> {
+    try {
+      const result = await parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
+      const body = this.getBody(result);
+      const response = body?.SelectKategoriResponse?.SelectKategoriResult;
+
+      if (!response) return [];
+
+      let kategoriler = response?.Kategoriler?.WebKategori || response?.WebKategori;
+      if (!kategoriler) return [];
+      if (!Array.isArray(kategoriler)) kategoriler = [kategoriler];
+
+      return kategoriler
+        .filter((k: any) => k.Aktif === 'true' || k.Aktif === true)
+        .map((k: any) => ({
+          id: parseInt(k.ID) || 0,
+          kategoriAdi: k.KategoriAdi || k.Adi || '',
+          ustKategoriId: parseInt(k.UstKategoriID || '0'),
+          url: k.Url || '',
+          sira: parseInt(k.Sira || '0'),
+        }));
+    } catch (error: any) {
+      logger.error('Parse kategoriler error', { error: error.message });
+      return [];
+    }
+  }
+
   // ============================
   // HELPERS
   // ============================
@@ -195,6 +254,23 @@ export interface MagazaResult {
   latitude: string;
   longitude: string;
   aktif: boolean;
+}
+
+export interface UyeResult {
+  id: number;
+  isim: string;
+  soyisim: string;
+  mail: string;
+  cepTelefonu: string;
+  telefon: string;
+}
+
+export interface KategoriResult {
+  id: number;
+  kategoriAdi: string;
+  ustKategoriId: number;
+  url: string;
+  sira: number;
 }
 
 export interface HediyeCekiResult {
