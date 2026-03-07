@@ -145,17 +145,29 @@ export class TicimaxSoapClient {
   // ============================
 
   /**
-   * Quick lookup: get member ID by phone number
+   * Look up a member by phone number
    */
-  async selectUyeIdByTel(telefon: string): Promise<string> {
-    const body = `<tem:SelectUyeIdByMailOrTel>
+  async selectUyeler(telefon: string): Promise<string> {
+    const body = `<tem:SelectUyeler>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
-      <tem:uyeMail></tem:uyeMail>
-      <tem:tel>${this.xmlEscape(telefon)}</tem:tel>
-      <tem:uyelikTipi>0</tem:uyelikTipi>
-    </tem:SelectUyeIdByMailOrTel>`;
+      <tem:filtre>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:AlisverisYapti>-1</ns:AlisverisYapti>
+        <ns:Cinsiyet>-1</ns:Cinsiyet>
+        <ns:MailIzin>-1</ns:MailIzin>
+        <ns:SmsIzin>-1</ns:SmsIzin>
+        <ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>
+        <ns:UyeID>-1</ns:UyeID>
+      </tem:filtre>
+      <tem:sayfalama>
+        <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SiralamaDegeri>id</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>Desc</ns:SiralamaYonu>
+        <ns:SayfaNo>1</ns:SayfaNo>
+      </tem:sayfalama>
+    </tem:SelectUyeler>`;
 
-    return this.request(config.ticimax.endpoints.uye, 'SelectUyeIdByMailOrTel', body);
+    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
   }
 
   /**
@@ -165,33 +177,18 @@ export class TicimaxSoapClient {
     const body = `<tem:SelectUyeler>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:filtre>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:AlisverisYapti>-1</ns:AlisverisYapti>
+        <ns:Cinsiyet>-1</ns:Cinsiyet>
+        <ns:MailIzin>-1</ns:MailIzin>
+        <ns:SmsIzin>-1</ns:SmsIzin>
         <ns:UyeID>${uyeId}</ns:UyeID>
       </tem:filtre>
       <tem:sayfalama>
         <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SiralamaDegeri>id</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>Desc</ns:SiralamaYonu>
         <ns:SayfaNo>1</ns:SayfaNo>
-        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
-        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
-      </tem:sayfalama>
-    </tem:SelectUyeler>`;
-
-    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
-  }
-
-  /**
-   * Look up a member by phone number (filter search)
-   */
-  async selectUyeler(telefon: string): Promise<string> {
-    const body = `<tem:SelectUyeler>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
-      <tem:filtre>
-        <ns:Telefon>${this.xmlEscape(telefon)}</ns:Telefon>
-      </tem:filtre>
-      <tem:sayfalama>
-        <ns:KayitSayisi>1</ns:KayitSayisi>
-        <ns:SayfaNo>1</ns:SayfaNo>
-        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
-        <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:sayfalama>
     </tem:SelectUyeler>`;
 

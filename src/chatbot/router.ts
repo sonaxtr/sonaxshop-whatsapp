@@ -52,48 +52,31 @@ class ChatbotRouter {
 
   /**
    * Look up member by WhatsApp phone number and store in session
-   * Strategy: 1) SelectUyeIdByMailOrTel (fast ID lookup)
-   *           2) If ID found, SelectUyeler by ID for full details
    */
   private async lookupMember(from: string): Promise<void> {
     try {
       const variants = this.getPhoneVariants(from);
 
-      // Step 1: Try SelectUyeIdByMailOrTel for each phone variant
       for (const phone of variants) {
         try {
-          const idXml = await soapClient.selectUyeIdByTel(phone);
-          const ids = await xmlParser.parseUyeIds(idXml);
+          const xml = await soapClient.selectUyeler(phone);
+          const uyeler = await xmlParser.parseUyeler(xml);
 
-          if (ids.length > 0) {
-            const uyeId = ids[0];
-            logger.info('Member ID found via tel lookup', { from, phone, uyeId });
-
-            // Step 2: Get full member details by ID
-            const detailXml = await soapClient.selectUyelerById(uyeId);
-            const uyeler = await xmlParser.parseUyeler(detailXml);
-
-            if (uyeler.length > 0) {
-              const uye = uyeler[0];
-              updateSession(from, {
-                data: {
-                  uyeId: uye.id,
-                  isim: uye.isim,
-                  soyisim: uye.soyisim,
-                  mail: uye.mail,
-                },
-              });
-              logger.info('Member found', { from, uyeId: uye.id, isim: uye.isim });
-              return;
-            } else {
-              // ID found but details not retrieved, store ID at least
-              updateSession(from, { data: { uyeId } });
-              logger.info('Member ID stored without details', { from, uyeId });
-              return;
-            }
+          if (uyeler.length > 0) {
+            const uye = uyeler[0];
+            updateSession(from, {
+              data: {
+                uyeId: uye.id,
+                isim: uye.isim,
+                soyisim: uye.soyisim,
+                mail: uye.mail,
+              },
+            });
+            logger.info('Member found', { from, phone, uyeId: uye.id, isim: uye.isim });
+            return;
           }
         } catch (err: any) {
-          logger.warn('Tel lookup attempt failed', { phone, error: err.message });
+          logger.warn('Member lookup attempt failed', { phone, error: err.message });
         }
       }
 
