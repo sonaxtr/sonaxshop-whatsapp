@@ -60,7 +60,10 @@ class ChatbotRouter {
       for (const phone of variants) {
         try {
           const xml = await soapClient.selectUyeler(phone);
+          // Debug: log raw response snippet
+          logger.info('SelectUyeler response', { phone, length: xml.length, snippet: xml.substring(0, 800) });
           const uyeler = await xmlParser.parseUyeler(xml);
+          logger.info('SelectUyeler parsed', { phone, count: uyeler.length, uyeler: uyeler.slice(0, 2) });
 
           if (uyeler.length > 0) {
             const uye = uyeler[0];
