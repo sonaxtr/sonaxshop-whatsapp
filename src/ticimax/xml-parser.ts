@@ -29,17 +29,27 @@ export class TicimaxXmlParser {
       if (!urunler) return [];
       if (!Array.isArray(urunler)) urunler = [urunler];
 
-      return urunler.map((u: any) => ({
-        id: parseInt(u.ID) || 0,
-        urunAdi: u.UrunAdi || '',
-        barkod: u.Barkod || '',
-        stokKodu: u.StokKodu || '',
-        fiyat: parseFloat(u.SatisFiyati || u.Fiyat || '0'),
-        stokAdedi: parseInt(u.StokAdedi || '0'),
-        resimUrl: u.ResimUrl || u.Resim || '',
-        url: u.Url || '',
-        aktif: u.Aktif === 'true',
-      }));
+      return urunler.map((u: any) => {
+        // Price, barcode, stock code, stock quantity are inside Varyasyonlar > Varyasyon
+        const varyasyonlar = u.Varyasyonlar?.Varyasyon;
+        const firstVar = Array.isArray(varyasyonlar) ? varyasyonlar[0] : varyasyonlar;
+
+        // Resimler contains image URLs as { string: [...] } or { string: "url" }
+        const resimler = u.Resimler?.string;
+        const firstResim = Array.isArray(resimler) ? resimler[0] : resimler;
+
+        return {
+          id: parseInt(u.ID) || 0,
+          urunAdi: u.UrunAdi || '',
+          barkod: firstVar?.Barkod || u.Barkod || '',
+          stokKodu: firstVar?.StokKodu || u.StokKodu || '',
+          fiyat: parseFloat(firstVar?.SatisFiyati || u.SatisFiyati || u.Fiyat || '0'),
+          stokAdedi: parseInt(u.ToplamStokAdedi || firstVar?.StokAdedi || u.StokAdedi || '0'),
+          resimUrl: firstResim || u.ResimUrl || u.Resim || '',
+          url: u.UrunSayfaAdresi || u.Url || '',
+          aktif: u.Aktif === 'true',
+        };
+      });
     } catch (error: any) {
       logger.error('Parse urunler error', { error: error.message });
       return [];
