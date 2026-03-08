@@ -1,13 +1,14 @@
 import { whatsappApi } from '../../whatsapp/api';
 import { soapClient } from '../../ticimax/soap-client';
 import { xmlParser } from '../../ticimax/xml-parser';
+import { productCache } from '../../ticimax/product-cache';
 import { updateSession } from '../session';
 import { logger } from '../../utils/logger';
 import { UrunResult } from '../../ticimax/xml-parser';
 
 export async function handleUrunAction(from: string, input: string, menuState: string): Promise<void> {
   if (!input || input.trim() === '') {
-    await whatsappApi.sendText(from, '❌ Lütfen barkod veya stok kodu yazınız.');
+    await whatsappApi.sendText(from, '❌ Lütfen ürün adı, barkod veya stok kodu yazınız.');
     return;
   }
 
@@ -15,35 +16,39 @@ export async function handleUrunAction(from: string, input: string, menuState: s
     await whatsappApi.sendText(from, '🔍 Ürün aranıyor...');
 
     let urunler: UrunResult[] = [];
+    const query = input.trim();
 
-    // Try barcode search first
-    try {
-      const xml = await soapClient.selectUrunByBarkod(input.trim());
-      urunler = await xmlParser.parseUrunler(xml);
-    } catch (err: any) {
-      logger.warn('Barcode search failed', { input, error: err.message });
-    }
-
-    // If no results, try stock code search
-    if (urunler.length === 0) {
+    if (productCache.isCodeQuery(query)) {
+      // Looks like a barcode or stock code — try exact SOAP search
       try {
-        const xml = await soapClient.selectUrunByStokKodu(input.trim());
+        const xml = await soapClient.selectUrunByBarkod(query);
         urunler = await xmlParser.parseUrunler(xml);
       } catch (err: any) {
-        logger.warn('Stock code search failed', { input, error: err.message });
+        logger.warn('Barcode search failed', { input, error: err.message });
+      }
+
+      if (urunler.length === 0) {
+        try {
+          const xml = await soapClient.selectUrunByStokKodu(query);
+          urunler = await xmlParser.parseUrunler(xml);
+        } catch (err: any) {
+          logger.warn('Stock code search failed', { input, error: err.message });
+        }
       }
     }
 
+    // If code search didn't find anything (or query is text), try text search from cache
     if (urunler.length === 0) {
-      // No results — provide website search link
-      const searchUrl = `https://sonaxshop.com.tr/Arama?q=${encodeURIComponent(input.trim())}`;
+      urunler = await productCache.searchByText(query, 5);
+    }
+
+    if (urunler.length === 0) {
       await whatsappApi.sendText(from,
         `❌ "${input}" ile eşleşen ürün bulunamadı.\n\n` +
-        `💡 Ürün adıyla arama yapmak için:\n🔗 ${searchUrl}\n\n` +
-        `📌 Bu bot barkod veya stok kodu ile arama yapabilir.`
+        `💡 Ürün adı, barkod veya stok kodu ile arama yapabilirsiniz.\n` +
+        `📌 Örnek: "hızlı cila", "4064700207202", "101207200"`
       );
     } else {
-      // Show up to 5 results
       const results = urunler.slice(0, 5);
       let text = `🔍 *${results.length} ürün bulundu:*\n`;
 
@@ -58,7 +63,7 @@ export async function handleUrunAction(from: string, input: string, menuState: s
       }
 
       if (urunler.length > 5) {
-        text += `\n\n📌 Toplam ${urunler.length} ürün bulundu. Daha fazlası için sonaxshop.com.tr'yi ziyaret edin.`;
+        text += `\n\n📌 Toplam ${urunler.length} ürün bulundu, ilk 5 tanesi gösteriliyor.`;
       }
 
       await whatsappApi.sendText(from, text);

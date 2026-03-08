@@ -103,6 +103,26 @@ export class TicimaxSoapClient {
     return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
   }
 
+  /**
+   * Get all active products (for text search cache)
+   */
+  async selectAllUrunler(pageSize: number = 1000): Promise<string> {
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:f>
+        <ns:Aktif>1</ns:Aktif>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
+        <ns:SiralamaDegeri>Sira</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
+      </tem:s>
+    </tem:SelectUrun>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
+  }
+
   // ============================
   // SİPARİŞ SERVİS
   // ============================

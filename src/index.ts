@@ -2,6 +2,7 @@ import express from 'express';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { webhookRoutes } from './webhook/routes';
+import { productCache } from './ticimax/product-cache';
 
 const app = express();
 
@@ -36,6 +37,11 @@ app.listen(config.port, () => {
   if (!config.whatsapp.phoneNumberId) {
     logger.warn('⚠️ WHATSAPP_PHONE_NUMBER_ID is not set! Set it in .env file.');
   }
+
+  // Initialize product cache for text search (non-blocking)
+  productCache.initialize().catch(err => {
+    logger.error('Product cache init error', { error: err.message });
+  });
 });
 
 export default app;
