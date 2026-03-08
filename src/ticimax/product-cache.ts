@@ -3,16 +3,15 @@ import { xmlParser, UrunResult } from './xml-parser';
 import { logger } from '../utils/logger';
 
 /**
- * In-memory product cache for text search.
- * Ticimax SOAP API doesn't support product name search (UrunFiltre has no UrunAdi field).
- * We cache all active products (~425) and search locally.
+ * In-memory product cache for text & code search.
+ * Ticimax SOAP StokKodu filter doesn't always work (variant-level codes),
+ * so we cache all active products and search locally.
  */
 class ProductCache {
   private products: UrunResult[] = [];
   private lastRefresh: number = 0;
   private isLoading: boolean = false;
   private readonly CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-  private readonly PAGE_SIZE = 500;
 
   /**
    * Initialize cache — call on app startup
@@ -34,19 +33,7 @@ class ProductCache {
     this.isLoading = true;
 
     try {
-      const allProducts: UrunResult[] = [];
-      let page = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        const xml = await soapClient.selectUrunByBarkod('', this.PAGE_SIZE);
-        // Actually we need a method that gets ALL products, not filtered by barcode
-        // Let's use selectUrunAll
-        break;
-      }
-
-      // Use a single large request — 425 products fits in one call
-      const xml = await this.fetchAllProducts();
+      const xml = await soapClient.selectAllUrunler(1000);
       const products = await xmlParser.parseUrunler(xml);
 
       this.products = products;
@@ -57,13 +44,6 @@ class ProductCache {
     } finally {
       this.isLoading = false;
     }
-  }
-
-  /**
-   * Fetch all active products from SOAP (no barcode/stock code filter)
-   */
-  private async fetchAllProducts(): Promise<string> {
-    return soapClient.selectAllUrunler(1000);
   }
 
   /**
@@ -96,11 +76,43 @@ class ProductCache {
   }
 
   /**
-   * Check if query looks like a barcode or stock code (numeric/alphanumeric, no spaces)
+   * Search products by barcode or stock code from cache
+   */
+  async searchByCode(code: string, limit: number = 5): Promise<UrunResult[]> {
+    await this.ensureFresh();
+
+    const q = code.trim().toLowerCase();
+    const results = this.products.filter(p =>
+      p.barkod.toLowerCase() === q ||
+      p.stokKodu.toLowerCase() === q
+    );
+
+    return results.slice(0, limit);
+  }
+
+  /**
+   * Search — tries code match first, then text search
+   */
+  async search(query: string, limit: number = 5): Promise<UrunResult[]> {
+    await this.ensureFresh();
+
+    const trimmed = query.trim();
+
+    // If it looks like a code (no spaces, alphanumeric), try exact code match first
+    if (this.isCodeQuery(trimmed)) {
+      const codeResults = await this.searchByCode(trimmed, limit);
+      if (codeResults.length > 0) return codeResults;
+    }
+
+    // Fall back to text search
+    return this.searchByText(trimmed, limit);
+  }
+
+  /**
+   * Check if query looks like a barcode or stock code
    */
   isCodeQuery(query: string): boolean {
     const trimmed = query.trim();
-    // Barcodes are typically 8-14 digits, stock codes are alphanumeric
     return /^[A-Za-z0-9\-_.]+$/.test(trimmed) && !trimmed.includes(' ');
   }
 
