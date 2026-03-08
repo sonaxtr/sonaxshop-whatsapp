@@ -71,11 +71,11 @@ export class TicimaxXmlParser {
           id: parseInt(s.ID) || 0,
           siparisNo: s.SiparisNo || s.SiparisKodu || '',
           tarih: s.SiparisTarihi || s.Tarih || '',
-          durum: this.getSiparisDurum(s.SiparisDurumu),
-          toplamTutar: parseFloat(s.GenelToplam || s.ToplamTutar || '0'),
-          kargoFirma: s.KargoFirmasi || '',
+          durum: s.SiparisDurumu || this.getSiparisDurum(s.Durum),
+          toplamTutar: parseFloat(s.GenelToplam || s.ToplamTutar || s.SiparisToplamTutari || '0'),
+          kargoFirma: s.KargoFirmaTanim || s.KargoFirmasi || '',
           kargoTakipNo: s.KargoTakipNo || '',
-          kargoTakipUrl: s.KargoTakipUrl || '',
+          kargoTakipUrl: s.KargoTakipLink || s.KargoTakipUrl || '',
         }));
     } catch (error: any) {
       logger.error('Parse siparisler error', { error: error.message });

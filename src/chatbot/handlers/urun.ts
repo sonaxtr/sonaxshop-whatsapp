@@ -3,23 +3,44 @@ import { soapClient } from '../../ticimax/soap-client';
 import { xmlParser } from '../../ticimax/xml-parser';
 import { updateSession } from '../session';
 import { logger } from '../../utils/logger';
+import { UrunResult } from '../../ticimax/xml-parser';
 
 export async function handleUrunAction(from: string, input: string, menuState: string): Promise<void> {
   if (!input || input.trim() === '') {
-    await whatsappApi.sendText(from, '❌ Lütfen ürün adı, barkod veya stok kodu yazınız.');
+    await whatsappApi.sendText(from, '❌ Lütfen barkod veya stok kodu yazınız.');
     return;
   }
 
   try {
     await whatsappApi.sendText(from, '🔍 Ürün aranıyor...');
 
-    const xml = await soapClient.selectUrunler(input);
-    const urunler = await xmlParser.parseUrunler(xml);
+    let urunler: UrunResult[] = [];
+
+    // Try barcode search first
+    try {
+      const xml = await soapClient.selectUrunByBarkod(input.trim());
+      urunler = await xmlParser.parseUrunler(xml);
+    } catch (err: any) {
+      logger.warn('Barcode search failed', { input, error: err.message });
+    }
+
+    // If no results, try stock code search
+    if (urunler.length === 0) {
+      try {
+        const xml = await soapClient.selectUrunByStokKodu(input.trim());
+        urunler = await xmlParser.parseUrunler(xml);
+      } catch (err: any) {
+        logger.warn('Stock code search failed', { input, error: err.message });
+      }
+    }
 
     if (urunler.length === 0) {
+      // No results — provide website search link
+      const searchUrl = `https://sonaxshop.com.tr/Arama?q=${encodeURIComponent(input.trim())}`;
       await whatsappApi.sendText(from,
         `❌ "${input}" ile eşleşen ürün bulunamadı.\n\n` +
-        `Farklı bir arama terimi deneyin veya sonaxshop.com.tr adresini ziyaret edin.`
+        `💡 Ürün adıyla arama yapmak için:\n🔗 ${searchUrl}\n\n` +
+        `📌 Bu bot barkod veya stok kodu ile arama yapabilir.`
       );
     } else {
       // Show up to 5 results

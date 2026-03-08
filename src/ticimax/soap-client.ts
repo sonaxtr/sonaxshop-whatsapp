@@ -62,18 +62,38 @@ export class TicimaxSoapClient {
   // ============================
 
   /**
-   * Search products by barcode or stock code
+   * Search products by barcode
    */
-  async selectUrunler(searchText: string, page: number = 1, pageSize: number = 5): Promise<string> {
+  async selectUrunByBarkod(barkod: string, pageSize: number = 5): Promise<string> {
     const body = `<tem:SelectUrun>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
         <ns:Aktif>1</ns:Aktif>
-        <ns:Barkod>${this.xmlEscape(searchText)}</ns:Barkod>
-        <ns:StokKodu>${this.xmlEscape(searchText)}</ns:StokKodu>
+        <ns:Barkod>${this.xmlEscape(barkod)}</ns:Barkod>
       </tem:f>
       <tem:s>
-        <ns:BaslangicIndex>${(page - 1) * pageSize}</ns:BaslangicIndex>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
+        <ns:SiralamaDegeri>Sira</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
+      </tem:s>
+    </tem:SelectUrun>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
+  }
+
+  /**
+   * Search products by stock code
+   */
+  async selectUrunByStokKodu(stokKodu: string, pageSize: number = 5): Promise<string> {
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:f>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:StokKodu>${this.xmlEscape(stokKodu)}</ns:StokKodu>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
         <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
         <ns:SiralamaDegeri>Sira</ns:SiralamaDegeri>
         <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
