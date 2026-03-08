@@ -104,6 +104,23 @@ export class TicimaxSoapClient {
   }
 
   /**
+   * Search product by UrunKartiID
+   */
+  async selectUrunByKartiId(urunKartiId: number): Promise<string> {
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:f>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:UrunKartiID>${urunKartiId}</ns:UrunKartiID>
+      </tem:f>
+      <tem:s>
+      </tem:s>
+    </tem:SelectUrun>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
+  }
+
+  /**
    * Get all active products (for text search cache)
    */
   async selectAllUrunler(pageSize: number = 1000): Promise<string> {
