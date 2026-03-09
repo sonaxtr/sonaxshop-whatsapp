@@ -77,6 +77,8 @@ export class TicimaxXmlParser {
           id: s.ID,
           siparisNo: s.SiparisNo || s.SiparisKodu,
           genelToplam: s.GenelToplam,
+          toplamTutar: s.ToplamTutar,
+          siparisToplamTutari: s.SiparisToplamTutari,
           odemeler: s.Odemeler ? JSON.stringify(s.Odemeler).substring(0, 300) : 'YOK',
         })),
       });
@@ -97,7 +99,7 @@ export class TicimaxXmlParser {
           siparisNo: s.SiparisNo || s.SiparisKodu || '',
           tarih: s.SiparisTarihi || s.Tarih || '',
           durum: s.SiparisDurumu || this.getSiparisDurum(s.Durum),
-          toplamTutar: parseFloat(s.GenelToplam || s.ToplamTutar || s.SiparisToplamTutari || '0'),
+          toplamTutar: parseFloat(s.SiparisToplamTutari || s.ToplamTutar || s.GenelToplam || '0'),
           kargoFirma: s.KargoFirmaTanim || s.KargoFirmasi || '',
           kargoTakipNo: s.KargoTakipNo || '',
           kargoTakipUrl: s.KargoTakipLink || s.KargoTakipUrl || '',
