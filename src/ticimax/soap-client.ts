@@ -298,18 +298,35 @@ export class TicimaxSoapClient {
     const body = `<tem:SelectSiparis>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
+        <ns:EntegrasyonAktarildi>-1</ns:EntegrasyonAktarildi>
+        <ns:EntegrasyonParams>
+          <ns:AlanDeger></ns:AlanDeger>
+          <ns:Deger></ns:Deger>
+          <ns:EntegrasyonKodu></ns:EntegrasyonKodu>
+          <ns:EntegrasyonParamsAktif>true</ns:EntegrasyonParamsAktif>
+          <ns:TabloAlan></ns:TabloAlan>
+          <ns:Tanim></ns:Tanim>
+        </ns:EntegrasyonParams>
+        <ns:FaturaNo></ns:FaturaNo>
         <ns:IptalEdilmisUrunler>true</ns:IptalEdilmisUrunler>
         <ns:OdemeDurumu>-1</ns:OdemeDurumu>
+        <ns:OdemeGetir>true</ns:OdemeGetir>
         <ns:OdemeTipi>-1</ns:OdemeTipi>
         <ns:SiparisDurumu>-1</ns:SiparisDurumu>
         <ns:SiparisID>-1</ns:SiparisID>
+        <ns:SiparisKaynagi></ns:SiparisKaynagi>
+        <ns:SiparisKodu></ns:SiparisKodu>
+        <ns:SiparisNo></ns:SiparisNo>
+        <ns:StrSiparisDurumu></ns:StrSiparisDurumu>
         <ns:TedarikciID>-1</ns:TedarikciID>
+        <ns:UrunGetir>true</ns:UrunGetir>
         <ns:UyeID>${uyeId}</ns:UyeID>
+        <ns:UyeTelefon></ns:UyeTelefon>
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
-        <ns:KayitSayisi>10</ns:KayitSayisi>
-        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+        <ns:KayitSayisi>3</ns:KayitSayisi>
+        <ns:SiralamaDeger>SiparisTarihi</ns:SiralamaDeger>
         <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:s>
     </tem:SelectSiparis>`;
