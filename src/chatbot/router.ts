@@ -374,7 +374,7 @@ class ChatbotRouter {
           const soyisim = session?.data?.soyisim || '';
           let header = `📦 *${isim} ${soyisim}, son siparişleriniz:*\n`;
 
-          for (const siparis of siparisler.slice(0, 5)) {
+          for (const siparis of siparisler.slice(0, 3)) {
             header += `\n━━━━━━━━━━━━━━━\n`;
             header += `📦 *Sipariş #${siparis.siparisNo}*\n`;
             header += `📅 Tarih: ${formatDate(siparis.tarih)}\n`;
@@ -408,12 +408,8 @@ class ChatbotRouter {
   private async handleSiparisMenu(from: string, input: string, message: WebhookMessage): Promise<void> {
     switch (input) {
       case 'siparis_sorgula':
-        await whatsappApi.sendText(from, '🔍 Sipariş numaranızı yazınız:\n\n_(Örnek: 12345)_');
+        await whatsappApi.sendText(from, '🔍 Sipariş numaranızı yazınız:\n\n_(Örnek: 247KD2449V)_');
         updateSession(from, { currentMenu: 'siparis_sorgula_input' });
-        break;
-      case 'siparis_kargo':
-        await whatsappApi.sendText(from, '🚚 Sipariş numaranızı yazınız:\n\n_(Kargo takip bilgisi getirilecektir)_');
-        updateSession(from, { currentMenu: 'siparis_kargo_input' });
         break;
       case 'siparis_adres':
         await whatsappApi.sendText(from, menus.ADRES_DEGISIKLIGI_TEXT);

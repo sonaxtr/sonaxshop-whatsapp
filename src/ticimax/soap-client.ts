@@ -147,7 +147,7 @@ export class TicimaxSoapClient {
   /**
    * Get orders by member phone or order ID
    */
-  async selectSiparis(siparisId?: number, telefon?: string): Promise<string> {
+  async selectSiparis(siparisKodu?: string, siparisId?: number): Promise<string> {
     const body = `<tem:SelectSiparis>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
@@ -156,8 +156,8 @@ export class TicimaxSoapClient {
         <ns:OdemeTipi>-1</ns:OdemeTipi>
         <ns:SiparisDurumu>-1</ns:SiparisDurumu>
         <ns:SiparisID>${siparisId || -1}</ns:SiparisID>
+        ${siparisKodu ? `<ns:SiparisKodu>${this.xmlEscape(siparisKodu)}</ns:SiparisKodu>` : ''}
         <ns:TedarikciID>-1</ns:TedarikciID>
-        ${telefon ? `<ns:UyeTelefon>${this.xmlEscape(telefon)}</ns:UyeTelefon>` : ''}
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
@@ -308,7 +308,7 @@ export class TicimaxSoapClient {
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
-        <ns:KayitSayisi>5</ns:KayitSayisi>
+        <ns:KayitSayisi>3</ns:KayitSayisi>
         <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
         <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:s>

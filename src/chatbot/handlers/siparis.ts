@@ -11,22 +11,16 @@ export async function handleSiparisAction(from: string, input: string, menuState
   }
 
   try {
-    // Try to parse as order ID
-    const siparisId = parseInt(input);
-
     await whatsappApi.sendText(from, '🔍 Sipariş sorgulanıyor...');
 
-    const xml = await soapClient.selectSiparis(
-      !isNaN(siparisId) ? siparisId : undefined,
-      isNaN(siparisId) ? input : undefined
-    );
-
+    // Search by SiparisKodu (alphanumeric order number like "247KD2449V")
+    const xml = await soapClient.selectSiparis(input.trim());
     const siparisler = await xmlParser.parseSiparisler(xml);
 
     if (siparisler.length === 0) {
       await whatsappApi.sendText(from,
         `❌ "${input}" ile eşleşen sipariş bulunamadı.\n\n` +
-        `Lütfen sipariş numaranızı kontrol edip tekrar deneyin veya 0850 307 7930'u arayın.`
+        `Lütfen sipariş numaranızı kontrol edip tekrar deneyin.`
       );
     } else {
       for (const siparis of siparisler.slice(0, 3)) {
@@ -35,15 +29,13 @@ export async function handleSiparisAction(from: string, input: string, menuState
         text += `📊 Durum: ${siparis.durum}\n`;
         text += `💰 Tutar: ${siparis.toplamTutar.toFixed(2)} TL\n`;
 
-        if (menuState === 'siparis_kargo_input' && siparis.kargoTakipNo) {
+        if (siparis.kargoTakipNo) {
           text += `\n🚚 *Kargo Bilgisi*\n`;
           text += `Firma: ${siparis.kargoFirma}\n`;
           text += `Takip No: ${siparis.kargoTakipNo}\n`;
           if (siparis.kargoTakipUrl) {
             text += `🔗 Takip: ${siparis.kargoTakipUrl}\n`;
           }
-        } else if (menuState === 'siparis_kargo_input' && !siparis.kargoTakipNo) {
-          text += `\n🚚 Kargo bilgisi henüz mevcut değil. Sipariş durumu: ${siparis.durum}`;
         }
 
         await whatsappApi.sendText(from, text);
@@ -52,7 +44,7 @@ export async function handleSiparisAction(from: string, input: string, menuState
   } catch (error: any) {
     logger.error('Siparis query error', { from, input, error: error.message });
     await whatsappApi.sendText(from,
-      '❌ Sipariş sorgulanırken bir hata oluştu. Lütfen daha sonra tekrar deneyin veya 0850 307 7930\'u arayın.'
+      '❌ Sipariş sorgulanırken bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
     );
   }
 
