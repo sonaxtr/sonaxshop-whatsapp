@@ -217,6 +217,14 @@ class ChatbotRouter {
         await handleMagazaAction(from, input, 'magaza_sorgula_input');
         break;
 
+      case 'magaza_konum_bekle':
+        if (message.type === 'location' && message.location) {
+          await handleMagazaAction(from, input, 'magaza_konum_bekle', message.location);
+        } else {
+          await whatsappApi.sendText(from, '📍 Lütfen konumunuzu gönderin.\n\n💡 WhatsApp\'ta 📎 (ataç) simgesine tıklayıp "Konum" seçeneğini kullanabilirsiniz.');
+        }
+        break;
+
       case 'magaza_secim':
         await handleMagazaAction(from, input, 'magaza_secim');
         break;
@@ -517,6 +525,10 @@ class ChatbotRouter {
     switch (input) {
       case 'magaza_listesi':
         await handleMagazaAction(from, input, 'magaza_listesi');
+        break;
+      case 'magaza_en_yakin':
+        await whatsappApi.sendText(from, '📍 Lütfen konumunuzu gönderin.\n\n💡 WhatsApp\'ta 📎 (ataç) simgesine tıklayıp "Konum" seçeneğini kullanabilirsiniz.');
+        updateSession(from, { currentMenu: 'magaza_konum_bekle' });
         break;
       case 'magaza_sorgula':
         await whatsappApi.sendText(from, '📍 Hangi il için mağaza aramak istiyorsunuz?\n\n_(Örnek: İstanbul)_');

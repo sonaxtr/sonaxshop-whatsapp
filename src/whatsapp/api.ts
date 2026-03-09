@@ -5,6 +5,7 @@ import {
   TextMessage,
   InteractiveListMessage,
   InteractiveButtonMessage,
+  LocationMessage,
   ListSection,
   ReplyButton,
 } from './types';
@@ -37,7 +38,7 @@ export class WhatsAppAPI {
   /**
    * Send raw message payload
    */
-  async send(payload: TextMessage | InteractiveListMessage | InteractiveButtonMessage): Promise<void> {
+  async send(payload: TextMessage | InteractiveListMessage | InteractiveButtonMessage | LocationMessage): Promise<void> {
     try {
       const response = await axios.post(this.url, payload, { headers: this.headers });
       logger.info('Message sent', { to: payload.to, messageId: response.data?.messages?.[0]?.id });
@@ -126,6 +127,24 @@ export class WhatsAppAPI {
     }
 
     await this.send(message);
+  }
+
+  /**
+   * Send a location message
+   */
+  async sendLocation(
+    to: string,
+    latitude: number,
+    longitude: number,
+    name?: string,
+    address?: string
+  ): Promise<void> {
+    await this.send({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'location',
+      location: { latitude, longitude, name, address },
+    });
   }
 
   /**

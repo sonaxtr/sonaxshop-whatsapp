@@ -143,6 +143,7 @@ export const MAGAZA_MENU_SECTIONS: ListSection[] = [
     title: 'Mağaza İşlemleri',
     rows: [
       { id: 'magaza_listesi', title: 'Uygulama Merkezleri', description: 'Tüm uygulama merkezlerimiz' },
+      { id: 'magaza_en_yakin', title: 'En Yakın Merkez', description: 'Konumunuza en yakın merkez' },
       { id: 'magaza_sorgula', title: 'Mağaza Sorgulama', description: 'İl bazlı mağaza arama' },
       { id: 'magaza_temsilci', title: 'Temsilciye Bağlan', description: 'Canlı destek' },
       { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },

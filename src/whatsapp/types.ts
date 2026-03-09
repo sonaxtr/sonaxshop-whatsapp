@@ -41,6 +41,7 @@ export interface WebhookMessage {
     list_reply?: { id: string; title: string; description?: string };
   };
   button?: { payload: string; text: string };
+  location?: { latitude: number; longitude: number; name?: string; address?: string };
 }
 
 export interface WebhookStatus {
@@ -105,5 +106,17 @@ export interface ReplyButton {
   reply: {
     id: string;
     title: string;
+  };
+}
+
+export interface LocationMessage {
+  messaging_product: 'whatsapp';
+  to: string;
+  type: 'location';
+  location: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+    address?: string;
   };
 }
