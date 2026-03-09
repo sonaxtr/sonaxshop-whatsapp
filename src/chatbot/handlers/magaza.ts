@@ -329,34 +329,30 @@ export async function handleMagazaAction(
         ),
       })).sort((a, b) => a.distance - b.distance);
 
-      // Show top 3 nearest stores
+      // Show top 3 nearest stores with location pins
       const nearest = withDistance.slice(0, 3);
-      let text = `📍 *Size en yakın ${nearest.length} uygulama merkezi:*\n`;
+      await whatsappApi.sendText(from, `📍 *Size en yakın ${nearest.length} uygulama merkezi:*`);
 
       for (const m of nearest) {
         const distText = m.distance < 1
           ? `${Math.round(m.distance * 1000)} m`
           : `${m.distance.toFixed(1)} km`;
 
-        text += `\n━━━━━━━━━━━━━━━\n`;
-        text += `📍 *${m.ad}*\n`;
+        let text = `📍 *${m.ad}*\n`;
         text += `📏 Mesafe: ${distText}\n`;
         if (m.il) text += `🏙 ${m.il}${m.ilce ? ` / ${m.ilce}` : ''}\n`;
         if (m.adres) text += `📮 ${m.adres}\n`;
-        if (m.telefon) text += `📞 ${m.telefon}\n`;
+        if (m.telefon) text += `📞 ${m.telefon}`;
+
+        await whatsappApi.sendText(from, text);
+        await whatsappApi.sendLocation(
+          from,
+          parseFloat(m.latitude),
+          parseFloat(m.longitude),
+          m.ad,
+          m.adres || `${m.il}${m.ilce ? ' / ' + m.ilce : ''}`
+        );
       }
-
-      await whatsappApi.sendText(from, text);
-
-      // Send the nearest store's location as a WhatsApp location message
-      const closest = nearest[0];
-      await whatsappApi.sendLocation(
-        from,
-        parseFloat(closest.latitude),
-        parseFloat(closest.longitude),
-        closest.ad,
-        closest.adres || `${closest.il}${closest.ilce ? ' / ' + closest.ilce : ''}`
-      );
     } catch (error: any) {
       logger.error('Nearest store error', { from, error: error.message });
       await whatsappApi.sendText(from, '❌ En yakın merkez aranırken bir hata oluştu.');
