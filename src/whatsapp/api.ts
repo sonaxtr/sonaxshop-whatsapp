@@ -150,6 +150,7 @@ export class WhatsAppAPI {
   }
 
   /**
+  /**
    * Send an image message
    */
   async sendImage(to: string, imageUrl: string, caption?: string): Promise<void> {
