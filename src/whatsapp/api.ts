@@ -6,6 +6,7 @@ import {
   InteractiveListMessage,
   InteractiveButtonMessage,
   InteractiveCTAUrlMessage,
+  ImageMessage,
   LocationMessage,
   ListSection,
   ReplyButton,
@@ -39,7 +40,7 @@ export class WhatsAppAPI {
   /**
    * Send raw message payload
    */
-  async send(payload: TextMessage | InteractiveListMessage | InteractiveButtonMessage | InteractiveCTAUrlMessage | LocationMessage): Promise<void> {
+  async send(payload: TextMessage | InteractiveListMessage | InteractiveButtonMessage | InteractiveCTAUrlMessage | ImageMessage | LocationMessage): Promise<void> {
     try {
       const response = await axios.post(this.url, payload, { headers: this.headers });
       logger.info('Message sent', { to: payload.to, messageId: response.data?.messages?.[0]?.id });
@@ -145,6 +146,18 @@ export class WhatsAppAPI {
       to,
       type: 'location',
       location: { latitude, longitude, name, address },
+    });
+  }
+
+  /**
+   * Send an image message
+   */
+  async sendImage(to: string, imageUrl: string, caption?: string): Promise<void> {
+    await this.send({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: { link: imageUrl, ...(caption ? { caption } : {}) },
     });
   }
 

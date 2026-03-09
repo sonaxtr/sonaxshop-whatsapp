@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { webhookRoutes } from './webhook/routes';
@@ -8,6 +9,9 @@ const app = express();
 
 // Parse JSON body (WhatsApp sends JSON)
 app.use(express.json());
+
+// Serve static files (price list images etc.)
+app.use('/images', express.static(path.join(__dirname, '..', 'public', 'images')));
 
 // Request logging
 app.use((req, res, next) => {

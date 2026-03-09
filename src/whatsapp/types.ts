@@ -128,6 +128,16 @@ export interface InteractiveCTAUrlMessage {
   };
 }
 
+export interface ImageMessage {
+  messaging_product: 'whatsapp';
+  to: string;
+  type: 'image';
+  image: {
+    link: string;
+    caption?: string;
+  };
+}
+
 export interface LocationMessage {
   messaging_product: 'whatsapp';
   to: string;
