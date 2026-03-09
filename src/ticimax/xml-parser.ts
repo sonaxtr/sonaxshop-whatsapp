@@ -83,18 +83,13 @@ export class TicimaxXmlParser {
 
       return siparisler
         .filter((s: any) => {
-          // Filter out orders with no payment activity
+          // Exclude orders with no payment record at all
+          // Any payment entry counts (hatalı, iptal, iade, onaylandı - all valid)
           const odemeler = s.Odemeler?.WebSiparisOdeme;
           if (!odemeler) return false;
           if (typeof odemeler === 'string' && odemeler.trim() === '') return false;
-
-          const odemeList = Array.isArray(odemeler) ? odemeler : [odemeler];
-          if (odemeList.length === 0) return false;
-
-          // At least one payment entry must have a valid ID or Tutar
-          return odemeList.some((o: any) =>
-            (parseInt(o.ID || '0') > 0) || (parseFloat(o.Tutar || '0') > 0)
-          );
+          if (Array.isArray(odemeler) && odemeler.length === 0) return false;
+          return true;
         })
         .map((s: any) => ({
           id: parseInt(s.ID) || 0,
