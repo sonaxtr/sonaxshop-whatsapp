@@ -71,7 +71,21 @@ export class TicimaxXmlParser {
       if (!siparisler) return [];
       if (!Array.isArray(siparisler)) siparisler = [siparisler];
 
+      logger.info('Raw siparisler before filter', {
+        count: siparisler.length,
+        odemeBilgileri: siparisler.map((s: any) => ({
+          id: s.ID,
+          siparisNo: s.SiparisNo || s.SiparisKodu,
+          odemeler: s.Odemeler ? JSON.stringify(s.Odemeler).substring(0, 200) : 'YOK',
+        })),
+      });
+
       return siparisler
+        .filter((s: any) => {
+          // Filter out orders with no payment activity at all
+          const odemeler = s.Odemeler?.WebSiparisOdeme;
+          return odemeler && (Array.isArray(odemeler) ? odemeler.length > 0 : true);
+        })
         .map((s: any) => ({
           id: parseInt(s.ID) || 0,
           siparisNo: s.SiparisNo || s.SiparisKodu || '',
