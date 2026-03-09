@@ -139,9 +139,9 @@ export const MAGAZA_MENU_SECTIONS: ListSection[] = [
   {
     title: 'Uygulama Merkezleri',
     rows: [
-      { id: 'magaza_fiyat', title: 'Fiyat Listesi', description: 'Uygulama hizmetleri fiyat listesi' },
       { id: 'magaza_en_yakin', title: 'En Yakın Sonax', description: 'Konumunuza en yakın merkez' },
       { id: 'magaza_sorgula', title: 'Merkez Sorgulama', description: 'İl bazlı uygulama merkezi arama' },
+      { id: 'magaza_fiyat', title: 'Fiyat Listesi', description: 'Uygulama hizmetleri fiyat listesi' },
       { id: 'magaza_kampanya', title: 'Kampanyalar', description: 'Güncel kampanya bilgileri' },
       { id: 'magaza_temsilci', title: 'Temsilciye Bağlan', description: 'Canlı destek' },
       { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },

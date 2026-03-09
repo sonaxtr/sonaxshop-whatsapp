@@ -515,9 +515,9 @@ class ChatbotRouter {
     switch (input) {
       case 'magaza_fiyat':
         await whatsappApi.sendText(from, '💰 *Sonax Uygulama Hizmetleri Fiyat Listesi*');
-        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-01-1-scaled.jpg', 'Sonax Özel Uygulama Paketleri');
-        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-02-scaled.jpg', 'Boya Koruma ve Cam Filmi Hizmetleri');
-        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-03-1-scaled.jpg', 'Sonax Uygulama Hizmetleri');
+        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-03-1-scaled.jpg', 'Sonax Özel Uygulama Paketleri');
+        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-01-1-scaled.jpg', 'Boya Koruma ve Cam Filmi Hizmetleri');
+        await whatsappApi.sendImage(from, 'https://sonax.com.tr/wp-content/uploads/2026/01/FIYAT-LISTESI-SUM-OCAK-2026-a4-02-scaled.jpg', 'Sonax Uygulama Hizmetleri');
         await this.showBackButtons(from);
         break;
       case 'magaza_en_yakin':
