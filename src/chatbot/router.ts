@@ -5,7 +5,6 @@ import { getSession, createSession, updateSession } from './session';
 import { soapClient } from '../ticimax/soap-client';
 import { xmlParser } from '../ticimax/xml-parser';
 import * as menus from './menus';
-import { handleSiparisAction } from './handlers/siparis';
 import { handleUrunAction } from './handlers/urun';
 import { handleKampanyaAction } from './handlers/kampanya';
 import { handleMagazaAction } from './handlers/magaza';
@@ -157,6 +156,11 @@ class ChatbotRouter {
       await this.showWelcome(from);
       return;
     }
+    if (input === 'menu_temsilci') {
+      await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);
+      await this.showBackButtons(from);
+      return;
+    }
     if (input === 'menu_ust') {
       const magazaStates = ['magaza_menu', 'magaza_sorgula_input', 'magaza_konum_bekle', 'magaza_secim'];
       if (magazaStates.includes(currentMenu)) {
@@ -182,11 +186,6 @@ class ChatbotRouter {
 
       case 'siparis_menu':
         await this.handleSiparisMenu(from, input, message);
-        break;
-
-      case 'siparis_sorgula_input':
-      case 'siparis_kargo_input':
-        await handleSiparisAction(from, input, currentMenu);
         break;
 
       case 'iade_menu':
@@ -314,7 +313,7 @@ class ChatbotRouter {
         break;
       case 'menu_iade':
         await whatsappApi.sendText(from, menus.IADE_TEXT);
-        await this.showBackButtons(from);
+        await this.showBackButtonsWithTemsilci(from);
         break;
       case 'menu_kampanya':
         await whatsappApi.sendText(from,
@@ -410,13 +409,9 @@ class ChatbotRouter {
 
   private async handleSiparisMenu(from: string, input: string, message: WebhookMessage): Promise<void> {
     switch (input) {
-      case 'siparis_sorgula':
-        await whatsappApi.sendText(from, '🔍 Sipariş numaranızı yazınız:\n\n_(Örnek: 247KD2449V)_');
-        updateSession(from, { currentMenu: 'siparis_sorgula_input' });
-        break;
       case 'siparis_adres':
         await whatsappApi.sendText(from, menus.ADRES_DEGISIKLIGI_TEXT);
-        await this.showBackButtons(from);
+        await this.showBackButtonsWithTemsilci(from);
         break;
       case 'siparis_iptal':
         await whatsappApi.sendText(from, menus.SIPARIS_IPTAL_TEXT);
@@ -556,6 +551,14 @@ class ChatbotRouter {
 
   private async showBackButtons(from: string): Promise<void> {
     await whatsappApi.sendButtons(from, 'Başka bir konuda yardımcı olabilir miyim?', [
+      { type: 'reply', reply: { id: 'menu_ust', title: 'Üst Menü ⬆️' } },
+      { type: 'reply', reply: { id: 'menu_ana', title: 'Ana Menü 🏠' } },
+    ]);
+  }
+
+  private async showBackButtonsWithTemsilci(from: string): Promise<void> {
+    await whatsappApi.sendButtons(from, 'Başka bir konuda yardımcı olabilir miyim?', [
+      { type: 'reply', reply: { id: 'menu_temsilci', title: 'Temsilciye Bağlan 👤' } },
       { type: 'reply', reply: { id: 'menu_ust', title: 'Üst Menü ⬆️' } },
       { type: 'reply', reply: { id: 'menu_ana', title: 'Ana Menü 🏠' } },
     ]);

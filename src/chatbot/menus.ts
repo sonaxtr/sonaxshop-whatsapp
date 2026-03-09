@@ -53,7 +53,6 @@ export const SIPARIS_MENU_SECTIONS: ListSection[] = [
   {
     title: 'Sipariş İşlemleri',
     rows: [
-      { id: 'siparis_sorgula', title: 'Sipariş Sorgulama', description: 'Sipariş numarası ile sorgulama' },
       { id: 'siparis_adres', title: 'Adres Değişikliği', description: 'Sipariş adres güncelleme' },
       { id: 'siparis_iptal', title: 'Sipariş İptali', description: 'Sipariş iptal talebi' },
       { id: 'menu_ust', title: 'Üst Menüye Dön ⬆️', description: 'Online menüye geri dön' },
