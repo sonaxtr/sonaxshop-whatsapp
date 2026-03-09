@@ -35,7 +35,7 @@ export const ONLINE_MENU_SECTIONS: ListSection[] = [
     rows: [
       { id: 'menu_siparis', title: 'Sipariş Hakkında', description: 'Sipariş sorgulama ve takip' },
       { id: 'menu_iade', title: 'İade ve Değişim Süreci', description: 'İade süreci bilgilendirme' },
-      { id: 'menu_kampanya', title: 'Kampanyalar', description: 'Güncel kampanyalar ve hediye çeki' },
+      { id: 'menu_kampanya', title: 'Kampanyalar', description: 'Güncel kampanyalar' },
       { id: 'menu_odeme', title: 'Ödeme Taksitlendirme', description: 'Ödeme yöntemleri ve IBAN' },
       { id: 'menu_uyelik', title: 'Üyelik', description: 'Üyelik bilgileri' },
       { id: 'menu_diger', title: 'Diğer', description: 'Temsilciye bağlanma' },
@@ -153,15 +153,18 @@ export const MAGAZA_MENU_SECTIONS: ListSection[] = [
 // ============================
 // SABİT METİNLER
 // ============================
-export const IADE_SUREC_TEXT =
+export const IADE_TEXT =
   `📦 *İade Süreci*\n\n` +
   `1. sonaxshop.com.tr adresinden üye girişi yapın\n` +
   `2. Hesabım > Siparişlerim bölümüne gidin\n` +
-  `3. İade etmek istediğiniz siparişin yanındaki "İade Talebi" butonuna tıklayın\n` +
+  `3. İade etmek istediğiniz siparişin detayındaki "Kolay İade" butonuna tıklayın\n` +
   `4. İade nedenini seçin ve onaylayın\n` +
-  `5. Kargo kodunuz tarafınıza iletilecektir\n\n` +
-  `⏱ İade süresi: Ürün teslim tarihinden itibaren 14 gün\n` +
-  `📞 Detaylı bilgi için: 0850 307 7930`;
+  `5. İade talebiniz için müşteri temsilcisine yazınız sizinle iade kodu paylaşılacaktır.\n\n` +
+  `⏱ İade süresi: Ürün teslim tarihinden itibaren 14 gün\n\n` +
+  `🔎 *İnceleme Süreci*\n\n` +
+  `İade talebiniz oluşturulduktan sonra ürünün tarafımıza ulaşması ve incelenmesi gerekmektedir.\n\n` +
+  `⏱ İnceleme süresi: Ürünün tarafımıza ulaşmasından itibaren 3-5 iş günü\n` +
+  `💰 İade onaylandıktan sonra ödemeniz 2-10 iş günü içinde iade edilir.`;
 
 export const ODEME_YONTEM_TEXT =
   `💳 *Ödeme Yöntemleri*\n\n` +
@@ -187,14 +190,11 @@ export const TEMSILCI_TEXT =
 export const ADRES_DEGISIKLIGI_TEXT =
   `📍 *Adres Değişikliği*\n\n` +
   `Siparişiniz "Siparişiniz Alındı" veya "Hazırlanıyor" durumundaysa:\n` +
-  `1. sonaxshop.com.tr'den üye girişi yapın\n` +
-  `2. Hesabım > Siparişlerim bölümüne gidin\n` +
-  `3. İlgili siparişte fatura adresi değişikliği yapabilirsiniz\n\n` +
+  `Canlı desteğe bağlanıp talep edebilirsiniz.\n\n` +
   `⚠️ Kargoya verilen siparişlerde adres değişikliği yapılamaz.`;
 
 export const SIPARIS_IPTAL_TEXT =
   `❌ *Sipariş İptali*\n\n` +
   `Siparişiniz henüz kargoya verilmediyse iptal talebinde bulunabilirsiniz.\n\n` +
-  `📞 İptal için lütfen bizi arayın: 0850 307 7930\n` +
-  `📧 Veya e-posta gönderin: info@sonaxshop.com.tr\n\n` +
+  `📞 İptal için lütfen canlı desteğe bağlanın.\n\n` +
   `⚠️ Kargoya verilen siparişler iptal edilemez, iade süreci başlatılması gerekmektedir.`;

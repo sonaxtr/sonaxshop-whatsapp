@@ -313,26 +313,29 @@ class ChatbotRouter {
         await this.handleSiparisEntry(from);
         break;
       case 'menu_iade':
-        await whatsappApi.sendList(from, menus.IADE_MENU_TEXT, 'Seçenekler', menus.IADE_MENU_SECTIONS, '🔄 İade ve Değişim');
-        updateSession(from, { currentMenu: 'iade_menu' });
-        break;
-      case 'menu_urun':
-        await whatsappApi.sendList(from, menus.URUN_MENU_TEXT, 'Seçenekler', menus.URUN_MENU_SECTIONS, '📦 Ürün Bilgisi');
-        updateSession(from, { currentMenu: 'urun_menu' });
-        break;
-      case 'menu_kategori':
-        await handleKategoriAction(from, 'root', 'kategori_menu');
+        await whatsappApi.sendText(from, menus.IADE_TEXT);
+        await this.showBackButtons(from);
         break;
       case 'menu_kampanya':
-        await whatsappApi.sendList(from, menus.KAMPANYA_MENU_TEXT, 'Seçenekler', menus.KAMPANYA_MENU_SECTIONS, '🎁 Kampanyalar');
-        updateSession(from, { currentMenu: 'kampanya_menu' });
+        await whatsappApi.sendText(from,
+          '🎁 *Güncel Kampanyalar*\n\n' +
+          'Güncel kampanyalarımız için:\n' +
+          '🔗 https://sonax.com.tr/kampanyalar'
+        );
+        await whatsappApi.sendCTAUrl(
+          from,
+          'Instagram\'dan da takip edebilirsiniz:',
+          '📸 Instagram\'da Takip Et',
+          'https://www.instagram.com/sonaxturkiye'
+        );
+        await this.showBackButtons(from);
         break;
       case 'menu_odeme':
         await whatsappApi.sendList(from, menus.ODEME_MENU_TEXT, 'Seçenekler', menus.ODEME_MENU_SECTIONS, '💳 Ödeme');
         updateSession(from, { currentMenu: 'odeme_menu' });
         break;
       case 'menu_uyelik':
-        await whatsappApi.sendText(from, '👤 Üyelik bilgileriniz için sonaxshop.com.tr adresinden giriş yapabilirsiniz.\n\nHesabım > Üyelik Bilgilerim bölümünden bilgilerinizi görüntüleyebilir ve düzenleyebilirsiniz.');
+        await whatsappApi.sendText(from, '👤 Üyelik bilgileriniz için https://www.sonaxshop.com.tr/Hesabim#/Uyelik-Bilgilerim adresinden giriş yapabilirsiniz.\n\nHesabım > Üyelik Bilgilerim bölümünden bilgilerinizi görüntüleyebilir ve düzenleyebilirsiniz.');
         await this.showBackButtons(from);
         break;
       case 'menu_diger':
@@ -427,27 +430,15 @@ class ChatbotRouter {
   }
 
   // ============================
-  // İADE MENU
+  // İADE (artık submenu yok, sadece placeholder)
   // ============================
 
   private async handleIadeMenu(from: string, input: string): Promise<void> {
+    // İade artık tek mesaj, buraya düşmemeli
     switch (input) {
-      case 'iade_surec':
-        await whatsappApi.sendText(from, menus.IADE_SUREC_TEXT);
-        await this.showBackButtons(from);
-        break;
-      case 'iade_inceleme':
-        await whatsappApi.sendText(from,
-          '🔎 *İnceleme Süreci*\n\n' +
-          'İade talebiniz oluşturulduktan sonra ürünün tarafımıza ulaşması ve incelenmesi gerekmektedir.\n\n' +
-          '⏱ İnceleme süresi: Ürünün tarafımıza ulaşmasından itibaren 3-5 iş günü\n' +
-          '💰 İade onaylandıktan sonra ödemeniz 2-10 iş günü içinde iade edilir.\n\n' +
-          '📞 Detaylı bilgi: 0850 307 7930'
-        );
-        await this.showBackButtons(from);
-        break;
       default:
-        await whatsappApi.sendList(from, menus.IADE_MENU_TEXT, 'Seçenekler', menus.IADE_MENU_SECTIONS, '🔄 İade');
+        await whatsappApi.sendText(from, menus.IADE_TEXT);
+        await this.showBackButtons(from);
         break;
     }
   }
