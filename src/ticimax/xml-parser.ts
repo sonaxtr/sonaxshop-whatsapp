@@ -91,6 +91,7 @@ export class TicimaxXmlParser {
           if (Array.isArray(odemeler) && odemeler.length === 0) return false;
           return true;
         })
+        .slice(0, 3)
         .map((s: any) => ({
           id: parseInt(s.ID) || 0,
           siparisNo: s.SiparisNo || s.SiparisKodu || '',
