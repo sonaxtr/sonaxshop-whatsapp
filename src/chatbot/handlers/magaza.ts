@@ -153,7 +153,27 @@ async function showBackButtons(from: string): Promise<void> {
   ]);
 }
 
-export async function handleMagazaAction(from: string, input: string, menuState: string): Promise<void> {
+/**
+ * Haversine formula — calculate distance between two coordinates in km
+ */
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+export async function handleMagazaAction(
+  from: string,
+  input: string,
+  menuState: string,
+  location?: { latitude: number; longitude: number }
+): Promise<void> {
 
   // ================================
   // ALL STORES — Interactive list
@@ -275,6 +295,71 @@ export async function handleMagazaAction(from: string, input: string, menuState:
     } catch (error: any) {
       logger.error('Magaza detail error', { from, storeId, error: error.message });
       await whatsappApi.sendText(from, '❌ Mağaza bilgisi yüklenirken bir hata oluştu.');
+    }
+
+    await showBackButtons(from);
+    updateSession(from, { currentMenu: 'magaza_menu' });
+    return;
+  }
+
+  // ================================
+  // NEAREST STORE — By user location
+  // ================================
+  if (menuState === 'magaza_konum_bekle' && location) {
+    try {
+      const magazalar = await getMagazalar();
+      const aktivMagazalar = magazalar.filter(m =>
+        m.aktif && m.latitude && m.longitude &&
+        !isNaN(parseFloat(m.latitude)) && !isNaN(parseFloat(m.longitude))
+      );
+
+      if (aktivMagazalar.length === 0) {
+        await whatsappApi.sendText(from, '❌ Konum bilgisi olan uygulama merkezi bulunamadı.');
+        await showBackButtons(from);
+        updateSession(from, { currentMenu: 'magaza_menu' });
+        return;
+      }
+
+      // Calculate distances and sort
+      const withDistance = aktivMagazalar.map(m => ({
+        ...m,
+        distance: haversineDistance(
+          location.latitude, location.longitude,
+          parseFloat(m.latitude), parseFloat(m.longitude)
+        ),
+      })).sort((a, b) => a.distance - b.distance);
+
+      // Show top 3 nearest stores
+      const nearest = withDistance.slice(0, 3);
+      let text = `📍 *Size en yakın ${nearest.length} uygulama merkezi:*\n`;
+
+      for (const m of nearest) {
+        const distText = m.distance < 1
+          ? `${Math.round(m.distance * 1000)} m`
+          : `${m.distance.toFixed(1)} km`;
+
+        text += `\n━━━━━━━━━━━━━━━\n`;
+        text += `📍 *${m.ad}*\n`;
+        text += `📏 Mesafe: ${distText}\n`;
+        if (m.il) text += `🏙 ${m.il}${m.ilce ? ` / ${m.ilce}` : ''}\n`;
+        if (m.adres) text += `📮 ${m.adres}\n`;
+        if (m.telefon) text += `📞 ${m.telefon}\n`;
+      }
+
+      await whatsappApi.sendText(from, text);
+
+      // Send the nearest store's location as a WhatsApp location message
+      const closest = nearest[0];
+      await whatsappApi.sendLocation(
+        from,
+        parseFloat(closest.latitude),
+        parseFloat(closest.longitude),
+        closest.ad,
+        closest.adres || `${closest.il}${closest.ilce ? ' / ' + closest.ilce : ''}`
+      );
+    } catch (error: any) {
+      logger.error('Nearest store error', { from, error: error.message });
+      await whatsappApi.sendText(from, '❌ En yakın merkez aranırken bir hata oluştu.');
     }
 
     await showBackButtons(from);
