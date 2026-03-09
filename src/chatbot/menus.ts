@@ -9,9 +9,10 @@ import { ListSection, ReplyButton } from '../whatsapp/types';
 // ANA MENÜ — Kanal Seçimi
 // ============================
 export const WELCOME_TEXT =
-  `Merhaba, Sonax Türkiye'ye hoş geldiniz. 😊 Dijital asistanınız olarak, size ben yardımcı olacağım. ` +
-  `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz. ` +
-  `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz. ` +
+  `Merhaba, Sonax Türkiye'ye hoş geldiniz. ✨🚗\n\n` +
+  `Dijital asistanınız olarak, size ben yardımcı olacağım.\n\n` +
+  `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz.\n\n` +
+  `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz.\n` +
   `https://www.sonaxshop.com.tr/kisisel-verilerin-korunmasi-kvkk`;
 
 export const CHANNEL_SELECT_TEXT =

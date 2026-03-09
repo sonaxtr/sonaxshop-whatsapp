@@ -258,9 +258,10 @@ class ChatbotRouter {
     if (isim) {
       const soyisim = session?.data?.soyisim || '';
       welcomeText =
-        `Merhaba ${isim} ${soyisim}, Sonax Türkiye'ye hoş geldiniz. 😊 Dijital asistanınız olarak, size ben yardımcı olacağım. ` +
-        `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz. ` +
-        `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz. ` +
+        `Merhaba ${isim} ${soyisim}, Sonax Türkiye'ye hoş geldiniz. ✨🚗\n\n` +
+        `Dijital asistanınız olarak, size ben yardımcı olacağım.\n\n` +
+        `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz.\n\n` +
+        `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz.\n` +
         `https://www.sonaxshop.com.tr/kisisel-verilerin-korunmasi-kvkk`;
     } else {
       welcomeText = menus.WELCOME_TEXT;
