@@ -109,6 +109,25 @@ export interface ReplyButton {
   };
 }
 
+export interface InteractiveCTAUrlMessage {
+  messaging_product: 'whatsapp';
+  to: string;
+  type: 'interactive';
+  interactive: {
+    type: 'cta_url';
+    header?: { type: 'text'; text: string };
+    body: { text: string };
+    footer?: { text: string };
+    action: {
+      name: 'cta_url';
+      parameters: {
+        display_text: string;
+        url: string;
+      };
+    };
+  };
+}
+
 export interface LocationMessage {
   messaging_product: 'whatsapp';
   to: string;

@@ -540,9 +540,13 @@ class ChatbotRouter {
         await whatsappApi.sendText(from,
           '🎁 *Güncel Kampanyalar*\n\n' +
           'Güncel kampanyalarımız için:\n' +
-          '🔗 https://sonax.com.tr/kampanyalar\n\n' +
-          'Instagram\'dan da takip edebilirsiniz:\n' +
-          '📸 @sonaxturkiye'
+          '🔗 https://sonax.com.tr/kampanyalar'
+        );
+        await whatsappApi.sendCTAUrl(
+          from,
+          'Instagram\'dan da takip edebilirsiniz:',
+          '📸 Instagram\'da Takip Et',
+          'https://www.instagram.com/sonaxturkiye'
         );
         await this.showBackButtons(from);
         break;

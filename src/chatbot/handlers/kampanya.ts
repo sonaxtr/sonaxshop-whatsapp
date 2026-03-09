@@ -10,9 +10,14 @@ export async function handleKampanyaAction(from: string, input: string, menuStat
     await whatsappApi.sendText(from,
       `🎁 *Güncel Kampanyalar*\n\n` +
       `Güncel kampanyalarımız için:\n` +
-      `🔗 https://sonaxshop.com.tr/kampanyalar\n\n` +
-      `Instagram'dan da takip edebilirsiniz:\n` +
-      `📸 @sonaxturkiye`
+      `🔗 https://sonax.com.tr/kampanyalar`
+    );
+
+    await whatsappApi.sendCTAUrl(
+      from,
+      'Instagram\'dan da takip edebilirsiniz:',
+      '📸 Instagram\'da Takip Et',
+      'https://www.instagram.com/sonaxturkiye'
     );
 
     await whatsappApi.sendButtons(from, 'Başka bir konuda yardımcı olabilir miyim?', [
