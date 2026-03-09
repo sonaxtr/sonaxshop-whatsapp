@@ -76,15 +76,25 @@ export class TicimaxXmlParser {
         odemeBilgileri: siparisler.map((s: any) => ({
           id: s.ID,
           siparisNo: s.SiparisNo || s.SiparisKodu,
-          odemeler: s.Odemeler ? JSON.stringify(s.Odemeler).substring(0, 200) : 'YOK',
+          genelToplam: s.GenelToplam,
+          odemeler: s.Odemeler ? JSON.stringify(s.Odemeler).substring(0, 300) : 'YOK',
         })),
       });
 
       return siparisler
         .filter((s: any) => {
-          // Filter out orders with no payment activity at all
+          // Filter out orders with no payment activity
           const odemeler = s.Odemeler?.WebSiparisOdeme;
-          return odemeler && (Array.isArray(odemeler) ? odemeler.length > 0 : true);
+          if (!odemeler) return false;
+          if (typeof odemeler === 'string' && odemeler.trim() === '') return false;
+
+          const odemeList = Array.isArray(odemeler) ? odemeler : [odemeler];
+          if (odemeList.length === 0) return false;
+
+          // At least one payment entry must have a valid ID or Tutar
+          return odemeList.some((o: any) =>
+            (parseInt(o.ID || '0') > 0) || (parseFloat(o.Tutar || '0') > 0)
+          );
         })
         .map((s: any) => ({
           id: parseInt(s.ID) || 0,
