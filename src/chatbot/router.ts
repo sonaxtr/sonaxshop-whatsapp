@@ -250,14 +250,18 @@ class ChatbotRouter {
     if (isim) {
       const soyisim = session?.data?.soyisim || '';
       welcomeText =
-        `Merhaba ${isim} ${soyisim}, Sonax Türkiye'ye hoş geldiniz! 🧴\n\n` +
-        `Dijital asistanınız olarak size yardımcı olacağım.\n\n` +
-        `Size destek olabilmem için yardım almak istediğiniz alışveriş kanalını seçiniz. 👇`;
+        `Merhaba ${isim} ${soyisim}, Sonax Türkiye'ye hoş geldiniz. 😊 Dijital asistanınız olarak, size ben yardımcı olacağım. ` +
+        `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz. ` +
+        `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz. ` +
+        `https://www.sonaxshop.com.tr/kisisel-verilerin-korunmasi-kvkk`;
     } else {
       welcomeText = menus.WELCOME_TEXT;
     }
 
-    await whatsappApi.sendButtons(from, welcomeText, menus.CHANNEL_BUTTONS);
+    // First message: KVKK welcome text
+    await whatsappApi.sendText(from, welcomeText);
+    // Second message: channel selection buttons
+    await whatsappApi.sendButtons(from, menus.CHANNEL_SELECT_TEXT, menus.CHANNEL_BUTTONS);
     updateSession(from, { currentMenu: 'channel_select' });
   }
 

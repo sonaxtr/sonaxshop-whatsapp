@@ -9,8 +9,12 @@ import { ListSection, ReplyButton } from '../whatsapp/types';
 // ANA MENÜ — Kanal Seçimi
 // ============================
 export const WELCOME_TEXT =
-  `Merhaba, Sonax Türkiye'ye hoş geldiniz! 🧴\n\n` +
-  `Dijital asistanınız olarak size yardımcı olacağım.\n\n` +
+  `Merhaba, Sonax Türkiye'ye hoş geldiniz. 😊 Dijital asistanınız olarak, size ben yardımcı olacağım. ` +
+  `Güvenliğiniz için görüşmelerinizin kayıt altına alındığını hatırlatmak isteriz. ` +
+  `Kişisel verilerinizin korunması kapsamında KVKK aydınlatma metnimizi linke tıklayarak okuyabilirsiniz. ` +
+  `https://www.sonaxshop.com.tr/kisisel-verilerin-korunmasi-kvkk`;
+
+export const CHANNEL_SELECT_TEXT =
   `Size destek olabilmem için yardım almak istediğiniz alışveriş kanalını seçiniz. 👇`;
 
 export const CHANNEL_BUTTONS: ReplyButton[] = [
