@@ -6,6 +6,19 @@ import { chatbotRouter } from '../chatbot/router';
 
 export const webhookRoutes = Router();
 
+// Message deduplication — prevent processing same message on webhook retries
+const processedMessages = new Set<string>();
+const MESSAGE_DEDUP_TTL = 120_000; // 2 minutes
+
+function isAlreadyProcessed(messageId: string): boolean {
+  if (processedMessages.has(messageId)) {
+    return true;
+  }
+  processedMessages.add(messageId);
+  setTimeout(() => processedMessages.delete(messageId), MESSAGE_DEDUP_TTL);
+  return false;
+}
+
 /**
  * GET /webhook — Meta verification endpoint
  * Meta sends a GET request to verify the webhook URL
@@ -49,6 +62,12 @@ webhookRoutes.post('/webhook', async (req: Request, res: Response) => {
         if (!messages || messages.length === 0) continue;
 
         for (const message of messages) {
+          // Skip duplicate messages (webhook retries)
+          if (isAlreadyProcessed(message.id)) {
+            logger.info('Skipping duplicate message', { id: message.id });
+            continue;
+          }
+
           const from = message.from;
           const contactName = contacts?.find(c => c.wa_id === from)?.profile?.name || 'Müşteri';
 
