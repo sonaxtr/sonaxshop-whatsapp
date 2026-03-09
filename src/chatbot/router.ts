@@ -325,7 +325,7 @@ class ChatbotRouter {
           from,
           'Instagramdan da takip edebilirsiniz:',
           'Instagramda Takip Et',
-          'https://www.instagram.com/sonaxturkiye'
+          'https://www.instagram.com/sonax.turkiye'
         );
         await this.showBackButtons(from);
         break;
@@ -542,7 +542,7 @@ class ChatbotRouter {
           from,
           'Instagramdan da takip edebilirsiniz:',
           'Instagramda Takip Et',
-          'https://www.instagram.com/sonaxturkiye'
+          'https://www.instagram.com/sonax.turkiye'
         );
         await this.showBackButtons(from);
         break;
