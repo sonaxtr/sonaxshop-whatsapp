@@ -323,8 +323,8 @@ class ChatbotRouter {
         );
         await whatsappApi.sendCTAUrl(
           from,
-          'Instagram\'dan da takip edebilirsiniz:',
-          '📸 Instagram\'da Takip Et',
+          'Instagramdan da takip edebilirsiniz:',
+          'Instagramda Takip Et',
           'https://www.instagram.com/sonaxturkiye'
         );
         await this.showBackButtons(from);
@@ -540,8 +540,8 @@ class ChatbotRouter {
         );
         await whatsappApi.sendCTAUrl(
           from,
-          'Instagram\'dan da takip edebilirsiniz:',
-          '📸 Instagram\'da Takip Et',
+          'Instagramdan da takip edebilirsiniz:',
+          'Instagramda Takip Et',
           'https://www.instagram.com/sonaxturkiye'
         );
         await this.showBackButtons(from);
