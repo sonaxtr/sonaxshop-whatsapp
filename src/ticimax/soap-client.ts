@@ -308,7 +308,7 @@ export class TicimaxSoapClient {
       </tem:f>
       <tem:s>
         <ns:BaslangicIndex>0</ns:BaslangicIndex>
-        <ns:KayitSayisi>3</ns:KayitSayisi>
+        <ns:KayitSayisi>10</ns:KayitSayisi>
         <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
         <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
       </tem:s>
