@@ -98,3 +98,111 @@ webhookRoutes.get('/', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+/**
+ * POST /api/cart-report — Proxy for dashboard to fetch cart data via SOAP
+ * Used by campaign dashboard on Vercel (SOAP is IP-restricted)
+ */
+webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
+  // Simple auth check
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+
+    // Step 1: Fetch all carts via SelectSepet
+    const cartXml = await soapClient.request(
+      config.ticimax.endpoints.siparis,
+      'SelectSepet',
+      `<tem:SelectSepet>
+        <tem:UyeKodu>${config.ticimax.uyeKodu}</tem:UyeKodu>
+        <tem:filtre></tem:filtre>
+        <tem:sayfalama>
+          <ns:BaslangicIndex>0</ns:BaslangicIndex>
+          <ns:KayitSayisi>200</ns:KayitSayisi>
+          <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+          <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+        </tem:sayfalama>
+      </tem:SelectSepet>`
+    );
+
+    // Parse cart XML
+    const carts: any[] = [];
+    const sepetMatches = cartXml.match(/<a:WebSepet>([\s\S]*?)<\/a:WebSepet>/g) || [];
+
+    for (const block of sepetMatches) {
+      const extractTag = (tag: string) => {
+        const m = block.match(new RegExp(`<a:${tag}>([^<]*)<`));
+        return m ? m[1] : '';
+      };
+
+      const productBlocks = block.match(/<a:WebSepetUrun>/g) || [];
+
+      carts.push({
+        uyeId: parseInt(extractTag('UyeID')) || 0,
+        uyeName: extractTag('UyeAdi'),
+        email: extractTag('UyeMail'),
+        cartDate: extractTag('SepetTarihi'),
+        cartGuid: extractTag('GuidSepetID'),
+        productCount: productBlocks.length,
+      });
+    }
+
+    // Step 2: Lookup member phone/SMS for unique UyeIDs
+    const uyeIds = [...new Set(carts.filter(c => c.uyeId > 0).map(c => c.uyeId))];
+    const memberInfo: Record<number, { phone: string; smsPermit: boolean; mailPermit: boolean }> = {};
+
+    const BATCH = 5;
+    for (let i = 0; i < uyeIds.length; i += BATCH) {
+      const batch = uyeIds.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (uyeId) => {
+        try {
+          const memberXml = await soapClient.selectUyelerById(uyeId);
+          const phoneMatch = memberXml.match(/<a:Telefon>([^<]*)</);
+          const smsMatch = memberXml.match(/<a:SmsIzin>([^<]*)</);
+          const mailMatch = memberXml.match(/<a:MailIzin>([^<]*)</);
+
+          memberInfo[uyeId] = {
+            phone: phoneMatch ? phoneMatch[1] : '',
+            smsPermit: smsMatch ? smsMatch[1] === 'true' : false,
+            mailPermit: mailMatch ? mailMatch[1] === 'true' : false,
+          };
+        } catch (err) {
+          logger.error(`Failed to lookup member ${uyeId}`, { error: (err as any).message });
+        }
+      }));
+    }
+
+    // Step 3: Merge cart + member data
+    const rows = carts.map(cart => {
+      const member = memberInfo[cart.uyeId];
+      let formattedDate = cart.cartDate;
+      try {
+        const d = new Date(cart.cartDate);
+        formattedDate = d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+      } catch { /* keep original */ }
+
+      return {
+        uyeId: cart.uyeId,
+        uyeName: cart.uyeName,
+        email: cart.email,
+        phone: member?.phone || '',
+        smsPermit: member?.smsPermit || false,
+        mailPermit: member?.mailPermit || false,
+        productCount: cart.productCount,
+        cartDate: formattedDate,
+        cartGuid: cart.cartGuid,
+      };
+    });
+
+    res.json({ rows, totalRecords: rows.length });
+  } catch (error: any) {
+    logger.error('Cart report proxy error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
