@@ -539,8 +539,10 @@ class ChatbotRouter {
       case 'magaza_kampanya':
         await whatsappApi.sendText(from,
           '🎁 *Güncel Kampanyalar*\n\n' +
-          'Sonax güncel kampanyalarını aşağıdaki linkten inceleyebilirsiniz:\n\n' +
-          '🔗 https://www.sonax.com.tr/kampanyalar'
+          'Güncel kampanyalarımız için:\n' +
+          '🔗 https://sonaxshop.com.tr/kampanyalar\n\n' +
+          'Instagram\'dan da takip edebilirsiniz:\n' +
+          '📸 @sonaxturkiye'
         );
         await this.showBackButtons(from);
         break;
