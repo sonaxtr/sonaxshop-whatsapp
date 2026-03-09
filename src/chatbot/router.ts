@@ -517,16 +517,13 @@ class ChatbotRouter {
       menus.MAGAZA_MENU_TEXT,
       'Seçenekler',
       menus.MAGAZA_MENU_SECTIONS,
-      '🏪 Mağaza'
+      '🏪 Uygulama Merkezleri'
     );
     updateSession(from, { currentMenu: 'magaza_menu' });
   }
 
   private async handleMagazaMenu(from: string, input: string, message: WebhookMessage): Promise<void> {
     switch (input) {
-      case 'magaza_listesi':
-        await handleMagazaAction(from, input, 'magaza_listesi');
-        break;
       case 'magaza_en_yakin':
         await whatsappApi.sendText(from, '📍 Lütfen konumunuzu gönderin.\n\n💡 WhatsApp\'ta 📎 (ataç) simgesine tıklayıp "Konum" seçeneğini kullanabilirsiniz.');
         updateSession(from, { currentMenu: 'magaza_konum_bekle' });
@@ -534,6 +531,14 @@ class ChatbotRouter {
       case 'magaza_sorgula':
         await whatsappApi.sendText(from, '📍 Hangi il için mağaza aramak istiyorsunuz?\n\n_(Örnek: İstanbul)_');
         updateSession(from, { currentMenu: 'magaza_sorgula_input' });
+        break;
+      case 'magaza_kampanya':
+        await whatsappApi.sendText(from,
+          '🎉 *Güncel Kampanyalar*\n\n' +
+          'Sonax güncel kampanyalarını aşağıdaki linkten takip edebilirsiniz:\n\n' +
+          '🔗 https://sonaxshop.com.tr/kampanyalar'
+        );
+        await this.showBackButtons(from);
         break;
       case 'magaza_temsilci':
         await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);

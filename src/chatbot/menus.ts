@@ -20,7 +20,7 @@ export const CHANNEL_SELECT_TEXT =
 
 export const CHANNEL_BUTTONS: ReplyButton[] = [
   { type: 'reply', reply: { id: 'channel_online', title: 'Online' } },
-  { type: 'reply', reply: { id: 'channel_magaza', title: 'Mağaza' } },
+  { type: 'reply', reply: { id: 'channel_magaza', title: 'Uygulama Merkezleri' } },
 ];
 
 // ============================
@@ -34,11 +34,9 @@ export const ONLINE_MENU_SECTIONS: ListSection[] = [
     title: 'Destek Konuları',
     rows: [
       { id: 'menu_siparis', title: 'Sipariş Hakkında', description: 'Sipariş sorgulama ve takip' },
-      { id: 'menu_iade', title: 'İade ve Değişim', description: 'İade süreci bilgilendirme' },
-      { id: 'menu_urun', title: 'Ürün Bilgisi', description: 'Ürün arama, stok ve fiyat' },
-      { id: 'menu_kategori', title: 'Kategoriler', description: 'Kategorilere göre ürün gezinme' },
+      { id: 'menu_iade', title: 'İade ve Değişim Süreci', description: 'İade süreci bilgilendirme' },
       { id: 'menu_kampanya', title: 'Kampanyalar', description: 'Güncel kampanyalar ve hediye çeki' },
-      { id: 'menu_odeme', title: 'Ödeme ve Taksitlendirme', description: 'Ödeme yöntemleri ve IBAN' },
+      { id: 'menu_odeme', title: 'Ödeme Taksitlendirme', description: 'Ödeme yöntemleri ve IBAN' },
       { id: 'menu_uyelik', title: 'Üyelik', description: 'Üyelik bilgileri' },
       { id: 'menu_diger', title: 'Diğer', description: 'Temsilciye bağlanma' },
       { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },
@@ -137,15 +135,15 @@ export const ODEME_MENU_SECTIONS: ListSection[] = [
 // MAĞAZA MENÜ
 // ============================
 export const MAGAZA_MENU_TEXT =
-  `Mağaza desteği için aşağıdaki konulardan birini seçiniz:`;
+  `Uygulama merkezleri desteği için aşağıdaki konulardan birini seçiniz:`;
 
 export const MAGAZA_MENU_SECTIONS: ListSection[] = [
   {
-    title: 'Mağaza İşlemleri',
+    title: 'Uygulama Merkezleri',
     rows: [
-      { id: 'magaza_listesi', title: 'Uygulama Merkezleri', description: 'Tüm uygulama merkezlerimiz' },
-      { id: 'magaza_en_yakin', title: 'En Yakın Merkez', description: 'Konumunuza en yakın merkez' },
+      { id: 'magaza_en_yakin', title: 'En Yakın Sonax', description: 'Konumunuza en yakın merkez' },
       { id: 'magaza_sorgula', title: 'Mağaza Sorgulama', description: 'İl bazlı mağaza arama' },
+      { id: 'magaza_kampanya', title: 'Kampanyalar', description: 'Güncel kampanya bilgileri' },
       { id: 'magaza_temsilci', title: 'Temsilciye Bağlan', description: 'Canlı destek' },
       { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },
     ],
