@@ -72,11 +72,6 @@ export class TicimaxXmlParser {
       if (!Array.isArray(siparisler)) siparisler = [siparisler];
 
       return siparisler
-        .filter((s: any) => {
-          // Filter out orders without payments (test orders)
-          const odemeler = s.Odemeler?.WebSiparisOdeme;
-          return odemeler && (Array.isArray(odemeler) ? odemeler.length > 0 : true);
-        })
         .map((s: any) => ({
           id: parseInt(s.ID) || 0,
           siparisNo: s.SiparisNo || s.SiparisKodu || '',

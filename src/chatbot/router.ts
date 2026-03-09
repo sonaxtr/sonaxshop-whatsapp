@@ -362,10 +362,13 @@ class ChatbotRouter {
     if (uyeId) {
       // Member found — auto-fetch recent orders
       await whatsappApi.sendText(from, '🔍 Siparişleriniz sorgulanıyor...');
+      logger.info('Auto siparis query', { from, uyeId });
 
       try {
         const xml = await soapClient.selectSiparisByUyeId(uyeId);
+        logger.info('SelectSiparisByUyeId response', { from, uyeId, xmlLength: xml.length, snippet: xml.substring(0, 500) });
         const siparisler = await xmlParser.parseSiparisler(xml);
+        logger.info('Parsed siparisler', { from, count: siparisler.length, siparisler: siparisler.slice(0, 3) });
 
         if (siparisler.length === 0) {
           await whatsappApi.sendText(from, 'Henüz bir siparişiniz bulunmamaktadır.');
