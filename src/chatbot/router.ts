@@ -158,8 +158,12 @@ class ChatbotRouter {
       return;
     }
     if (input === 'menu_ust') {
-      updateSession(from, { currentMenu: 'online_menu' });
-      await this.showOnlineMenu(from);
+      const magazaStates = ['magaza_menu', 'magaza_sorgula_input', 'magaza_konum_bekle', 'magaza_secim'];
+      if (magazaStates.includes(currentMenu)) {
+        await this.showMagazaMenu(from);
+      } else {
+        await this.showOnlineMenu(from);
+      }
       return;
     }
 
@@ -529,14 +533,14 @@ class ChatbotRouter {
         updateSession(from, { currentMenu: 'magaza_konum_bekle' });
         break;
       case 'magaza_sorgula':
-        await whatsappApi.sendText(from, '📍 Hangi il için mağaza aramak istiyorsunuz?\n\n_(Örnek: İstanbul)_');
+        await whatsappApi.sendText(from, '📍 Hangi il için uygulama merkezi aramak istiyorsunuz?\n\n_(Örnek: İstanbul)_');
         updateSession(from, { currentMenu: 'magaza_sorgula_input' });
         break;
       case 'magaza_kampanya':
         await whatsappApi.sendText(from,
-          '🎉 *Güncel Kampanyalar*\n\n' +
-          'Sonax güncel kampanyalarını aşağıdaki linkten takip edebilirsiniz:\n\n' +
-          '🔗 https://sonaxshop.com.tr/kampanyalar'
+          '🎁 *Güncel Kampanyalar*\n\n' +
+          'Sonax güncel kampanyalarını aşağıdaki linkten inceleyebilirsiniz:\n\n' +
+          '🔗 https://www.sonaxshop.com.tr/kampanyalar'
         );
         await this.showBackButtons(from);
         break;
