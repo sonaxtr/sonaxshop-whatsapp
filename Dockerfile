@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:22-alpine AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,19 @@ COPY src/ ./src/
 RUN npm run build
 
 # Stage 2: Production
-FROM node:22-alpine
+FROM node:22-slim
+
+# Install Chromium and dependencies for Puppeteer
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set Chromium path for Puppeteer
+ENV CHROMIUM_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
