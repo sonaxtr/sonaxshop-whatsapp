@@ -9,23 +9,41 @@
  *   -> Ticimax tab ac -> login kontrolu -> sayfalari tara -> veriyi don
  */
 
+// Startup log - this confirms the service worker loaded successfully
+console.log('[SonaxSync] Background service worker LOADED at', new Date().toISOString());
+
 const TICIMAX_BASE = 'https://www.sonaxshop.com.tr';
 const CART_REPORT_URL = `${TICIMAX_BASE}/Admin/UyeSepetRapor.aspx`;
-const LOGIN_URL = `${TICIMAX_BASE}/UyeGiris`;
+
+// Log when extension is installed or updated
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('[SonaxSync] Extension installed/updated:', details.reason);
+});
 
 // --- Port-based messaging for progress updates ---
 
 chrome.runtime.onConnect.addListener((port) => {
+  console.log('[SonaxSync] onConnect fired, port name:', port.name);
+
   if (port.name === 'sonax-sync') {
+    console.log('[SonaxSync] Port connected from content script');
+
     port.onMessage.addListener(async (msg) => {
+      console.log('[SonaxSync] Port message received:', msg.type);
       if (msg.type === 'start') {
+        console.log('[SonaxSync] Sync started');
         try {
           await handleSyncCarts(port);
         } catch (err) {
-          port.postMessage({
-            type: 'COMPLETE',
-            data: { error: err.message || 'Bilinmeyen hata' },
-          });
+          console.error('[SonaxSync] Sync error:', err);
+          try {
+            port.postMessage({
+              type: 'COMPLETE',
+              data: { error: err.message || 'Bilinmeyen hata' },
+            });
+          } catch (e) {
+            console.error('[SonaxSync] Could not send error to port:', e);
+          }
         }
       }
     });
@@ -36,9 +54,12 @@ chrome.runtime.onConnect.addListener((port) => {
 
 async function handleSyncCarts(port) {
   const sendProgress = (message) => {
+    console.log('[SonaxSync]', message);
     try {
       port.postMessage({ type: 'PROGRESS', data: { message } });
-    } catch {}
+    } catch (e) {
+      console.warn('[SonaxSync] Progress send failed:', e);
+    }
   };
 
   sendProgress('Ticimax admin paneli aciliyor...');
@@ -48,13 +69,15 @@ async function handleSyncCarts(port) {
     url: CART_REPORT_URL,
     active: false,
   });
+  console.log('[SonaxSync] Tab created:', tab.id);
 
   try {
-    await waitForTabLoad(tab.id);
+    await waitForTabComplete(tab.id);
 
     // Step 2: Check if redirected to login page
     const tabInfo = await chrome.tabs.get(tab.id);
     const currentUrl = tabInfo.url || '';
+    console.log('[SonaxSync] Tab URL after load:', currentUrl);
 
     if (currentUrl.includes('UyeGiris') || currentUrl.includes('Login')) {
       sendProgress('Ticimax girisi gerekiyor - lutfen giris yapin...');
@@ -75,7 +98,7 @@ async function handleSyncCarts(port) {
         url: CART_REPORT_URL,
         active: false,
       });
-      await waitForTabLoad(tab.id);
+      await waitForTabComplete(tab.id);
     }
 
     sendProgress('Sayfa boyutu ayarlaniyor...');
@@ -99,9 +122,11 @@ async function handleSyncCarts(port) {
       },
     });
 
+    console.log('[SonaxSync] Page size changed:', pageSizeResult[0]?.result);
+
     if (pageSizeResult[0]?.result === true) {
-      await waitForTabLoad(tab.id);
-      await sleep(1000);
+      // Wait for ASP.NET postback navigation: loading -> complete
+      await waitForNavigation(tab.id);
     }
 
     // Step 4: Scrape all pages
@@ -118,6 +143,12 @@ async function handleSyncCarts(port) {
       });
 
       const pageData = scrapeResult[0]?.result;
+      console.log('[SonaxSync] Page', currentPage, 'scrape result:', {
+        rows: pageData?.rows?.length,
+        totalPages: pageData?.totalPages,
+        error: pageData?.error,
+      });
+
       if (!pageData || !pageData.rows) {
         sendProgress('Tablo bulunamadi!');
         break;
@@ -149,16 +180,20 @@ async function handleSyncCarts(port) {
         },
       });
 
+      console.log('[SonaxSync] Next button clicked:', nextResult[0]?.result);
+
       if (!nextResult[0]?.result) {
         sendProgress('Sonraki sayfa butonu bulunamadi, durduruluyor');
         break;
       }
 
       currentPage++;
-      await waitForTabLoad(tab.id);
-      await sleep(500);
+
+      // Wait for ASP.NET postback navigation (loading -> complete)
+      await waitForNavigation(tab.id);
     }
 
+    console.log('[SonaxSync] Scraping complete. Total rows:', allRows.length);
     sendProgress(`Tamamlandi! ${allRows.length} kayit bulundu.`);
 
     // Close the Ticimax tab
@@ -177,7 +212,9 @@ async function handleSyncCarts(port) {
         syncedAt: new Date().toISOString(),
       },
     });
+    console.log('[SonaxSync] COMPLETE message sent with', allRows.length, 'rows');
   } catch (err) {
+    console.error('[SonaxSync] Error in handleSyncCarts:', err);
     // Clean up tab on error
     try {
       await chrome.tabs.remove(tab.id);
@@ -197,16 +234,19 @@ function scrapeCartReportPage() {
   const totalPages = totalMatch ? parseInt(totalMatch[1]) : 1;
   const totalRecords = totalMatch ? parseInt(totalMatch[2]) : 0;
 
-  // Find the data table by looking for "Uye ID" header
+  // Find the data table by looking for header text
   const tables = document.querySelectorAll('table');
   let dataTable = null;
 
   for (const table of tables) {
-    const headerText = table.querySelector('tr')?.innerText || '';
+    const firstRow = table.querySelector('tr');
+    if (!firstRow) continue;
+    const headerText = firstRow.innerText || '';
     if (
       headerText.includes('Üye ID') ||
       headerText.includes('UyeID') ||
-      headerText.includes('Üye Adı')
+      headerText.includes('Üye Adı') ||
+      headerText.includes('Uye ID')
     ) {
       dataTable = table;
       break;
@@ -214,15 +254,33 @@ function scrapeCartReportPage() {
   }
 
   if (!dataTable) {
-    // Try finding by GridView ID (ASP.NET convention)
+    // Try finding by ASP.NET GridView ID patterns
     dataTable =
       document.getElementById('cphPageContent_gvSepetRapor') ||
-      document.querySelector('table.GridView') ||
-      document.querySelector('[id*="gvSepet"]');
+      document.querySelector('[id*="gvSepet"]') ||
+      document.querySelector('[id*="GridView"]') ||
+      document.querySelector('table.GridView');
   }
 
   if (!dataTable) {
-    return { rows: [], totalPages, totalRecords, error: 'Tablo bulunamadi' };
+    // Last resort: find the largest table on the page
+    let maxRows = 0;
+    for (const table of tables) {
+      const rowCount = table.querySelectorAll('tr').length;
+      if (rowCount > maxRows) {
+        maxRows = rowCount;
+        dataTable = table;
+      }
+    }
+  }
+
+  if (!dataTable) {
+    return {
+      rows: [],
+      totalPages,
+      totalRecords,
+      error: 'Tablo bulunamadi. Tables found: ' + tables.length,
+    };
   }
 
   const rows = [];
@@ -257,55 +315,104 @@ function scrapeCartReportPage() {
 }
 
 // --- Utility functions ---
+// ALL wait functions use POLLING instead of event listeners.
+// This keeps the service worker active and prevents Chrome from killing it
+// (MV3 service workers are terminated after ~30s of idle time).
 
-function waitForTabLoad(tabId, timeoutMs = 30000) {
-  return new Promise(async (resolve, reject) => {
-    // Check if already complete
+/**
+ * Wait for a tab to complete loading (initial load).
+ * Uses polling to keep service worker alive.
+ */
+async function waitForTabComplete(tabId, timeoutMs = 60000) {
+  const startTime = Date.now();
+  console.log('[SonaxSync] waitForTabComplete start, tabId:', tabId);
+
+  while (Date.now() - startTime < timeoutMs) {
     try {
       const tab = await chrome.tabs.get(tabId);
       if (tab.status === 'complete') {
+        console.log('[SonaxSync] Tab complete after', Date.now() - startTime, 'ms');
         await sleep(800);
-        resolve();
         return;
       }
-    } catch {}
-
-    const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error('Sayfa yuklenirken zaman asimi'));
-    }, timeoutMs);
-
-    function listener(id, info) {
-      if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        clearTimeout(timeout);
-        setTimeout(resolve, 1000); // Extra settle time
-      }
+    } catch (e) {
+      console.warn('[SonaxSync] Tab get error:', e.message);
+      return;
     }
-
-    chrome.tabs.onUpdated.addListener(listener);
-  });
+    await sleep(500); // Poll every 500ms - keeps service worker active
+  }
+  console.warn('[SonaxSync] waitForTabComplete timeout after', timeoutMs, 'ms');
 }
 
-function waitForUrlChange(tabId, excludeText, timeoutMs = 120000) {
-  return new Promise(async (resolve, reject) => {
-    const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      reject(
-        new Error("Giris bekleniyor - lutfen Ticimax'a giris yapin")
-      );
-    }, timeoutMs);
+/**
+ * Wait for a navigation to complete after clicking a button (e.g. ASP.NET postback).
+ * Handles race condition: page is "complete" -> clicks button -> "loading" -> "complete"
+ * Uses polling to keep service worker alive.
+ */
+async function waitForNavigation(tabId, timeoutMs = 60000) {
+  const startTime = Date.now();
+  console.log('[SonaxSync] waitForNavigation start');
 
-    function listener(id, info) {
-      if (id === tabId && info.url && !info.url.includes(excludeText)) {
-        chrome.tabs.onUpdated.removeListener(listener);
-        clearTimeout(timeout);
-        setTimeout(resolve, 2000);
+  // Phase 1: Wait for page to START loading (max 5 seconds)
+  let sawLoading = false;
+  while (Date.now() - startTime < 5000) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === 'loading') {
+        sawLoading = true;
+        console.log('[SonaxSync] Navigation started (loading)');
+        break;
       }
+    } catch (e) {
+      return;
     }
+    await sleep(200);
+  }
 
-    chrome.tabs.onUpdated.addListener(listener);
-  });
+  if (!sawLoading) {
+    console.warn('[SonaxSync] Navigation did not start within 5s, continuing anyway');
+    await sleep(1000);
+    return;
+  }
+
+  // Phase 2: Wait for page to FINISH loading
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === 'complete') {
+        console.log('[SonaxSync] Navigation complete after', Date.now() - startTime, 'ms');
+        await sleep(800);
+        return;
+      }
+    } catch (e) {
+      return;
+    }
+    await sleep(500);
+  }
+  console.warn('[SonaxSync] waitForNavigation timeout');
+}
+
+/**
+ * Wait for URL to change (e.g. after user logs in).
+ * Uses polling to keep service worker alive.
+ */
+async function waitForUrlChange(tabId, excludeText, timeoutMs = 120000) {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url && !tab.url.includes(excludeText)) {
+        console.log('[SonaxSync] URL changed to:', tab.url);
+        await sleep(2000);
+        return;
+      }
+    } catch (e) {
+      return;
+    }
+    await sleep(1000); // Poll every second
+  }
+  throw new Error("Giris bekleniyor - lutfen Ticimax'a giris yapin");
 }
 
 function sleep(ms) {
