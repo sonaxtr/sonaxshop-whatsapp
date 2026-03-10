@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "SonaxSync - Ticimax Sepet Senkronizasyonu",
+  "version": "1.0.0",
+  "description": "SonaxShop Dashboard icin Ticimax admin panelinden sepet verilerini otomatik ceker",
+  "permissions": [
+    "scripting",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.sonaxshop.com.tr/*",
+    "https://sonaxshop.com.tr/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sonaxshop-campaign-dashboard.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "SonaxSync"
+  }
+}
