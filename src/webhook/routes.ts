@@ -206,3 +206,36 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * POST /api/cart-report-v2 — Scrape UyeSepetRapor.aspx for full cart data
+ * Returns 700+ records (vs 100 from SOAP SelectSepet)
+ * All records have member info (name, email, phone, SMS/mail permissions)
+ */
+webhookRoutes.post('/api/cart-report-v2', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { getAdminScraper } = await import('../ticimax/admin-scraper');
+    const scraper = getAdminScraper();
+
+    // maxPages from request body (0 = all pages, default)
+    const maxPages = req.body?.maxPages || 0;
+
+    const result = await scraper.getCartReport(maxPages);
+
+    res.json({
+      rows: result.rows,
+      totalRecords: result.totalRecords,
+      source: 'admin-scraper',
+    });
+  } catch (error: any) {
+    logger.error('Cart report v2 scraper error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});

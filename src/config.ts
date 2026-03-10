@@ -14,6 +14,9 @@ export const config = {
   ticimax: {
     uyeKodu: process.env.TICIMAX_UYE_KODU || '',
     baseUrl: process.env.TICIMAX_BASE_URL || 'https://sonaxshop.com.tr/Servis',
+    adminUrl: process.env.TICIMAX_ADMIN_URL || 'https://sonaxshop.com.tr',
+    adminUser: process.env.TICIMAX_ADMIN_USER || '',
+    adminPass: process.env.TICIMAX_ADMIN_PASS || '',
     endpoints: {
       urun: '/UrunServis.svc',
       uye: '/UyeServis.svc',
