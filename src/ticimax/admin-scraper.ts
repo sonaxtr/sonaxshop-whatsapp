@@ -55,8 +55,9 @@ export class TicimaxAdminScraper {
   }
 
   /**
-   * Login to Ticimax admin panel
-   * Returns session cookie for subsequent requests
+   * Login to Ticimax admin panel via /UyeGiris page
+   * Ticimax redirects /Admin/Login.aspx → /UyeGiris?ReturnUrl=...
+   * We login through the member login form which grants admin access
    */
   async login(): Promise<void> {
     // Reuse session if still valid
@@ -66,45 +67,72 @@ export class TicimaxAdminScraper {
 
     logger.info('Logging into Ticimax admin panel...');
 
-    // Step 1: GET login page to get ViewState
-    const loginPageResp = await this.client.get('/Admin/Login.aspx', {
-      maxRedirects: 0,
+    // Step 1: GET the UyeGiris page (member login) with admin ReturnUrl
+    const loginUrl = '/UyeGiris?ReturnUrl=%2fAdmin%2fLogin.aspx';
+    const loginPageResp = await this.client.get(loginUrl, {
+      maxRedirects: 5,
       validateStatus: (s) => s < 400,
     });
 
     const $ = cheerio.load(loginPageResp.data);
     const viewState = $('input[name="__VIEWSTATE"]').val() as string || '';
     const viewStateGenerator = $('input[name="__VIEWSTATEGENERATOR"]').val() as string || '';
-    const eventValidation = $('input[name="__EVENTVALIDATION"]').val() as string || '';
+    const requestVerificationToken = $('input[name="__RequestVerificationToken"]').val() as string || '';
 
     // Extract cookies from login page
     const setCookies = loginPageResp.headers['set-cookie'] || [];
     let cookies = setCookies.map((c: string) => c.split(';')[0]).join('; ');
 
-    // Step 2: POST login credentials
+    logger.info('Login page loaded, posting credentials...', {
+      hasViewState: !!viewState,
+      hasToken: !!requestVerificationToken,
+      cookieCount: setCookies.length,
+    });
+
+    // Step 2: POST login credentials to UyeGiris
     const loginData = new URLSearchParams();
     loginData.append('__VIEWSTATE', viewState);
     loginData.append('__VIEWSTATEGENERATOR', viewStateGenerator);
-    if (eventValidation) loginData.append('__EVENTVALIDATION', eventValidation);
-    loginData.append('txtEmail', this.username);
-    loginData.append('txtSifre', this.password);
-    loginData.append('btnGiris', 'Giriş Yap');
+    if (requestVerificationToken) loginData.append('__RequestVerificationToken', requestVerificationToken);
+    loginData.append('txtUyeGirisEmail', this.username);
+    loginData.append('txtUyeGirisPassword', this.password);
 
-    const loginResp = await this.client.post('/Admin/Login.aspx', loginData.toString(), {
+    const loginResp = await this.client.post(loginUrl, loginData.toString(), {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Cookie': cookies,
+        'Referer': `${this.baseUrl}${loginUrl}`,
       },
       maxRedirects: 0,
       validateStatus: (s) => s < 400 || s === 302,
     });
 
-    // Extract auth cookies
+    // Extract auth cookies from login response
     const authCookies = loginResp.headers['set-cookie'] || [];
     const allCookies = [...setCookies, ...authCookies];
     this.sessionCookie = allCookies.map((c: string) => c.split(';')[0]).join('; ');
 
+    // Follow redirect chain to get any additional cookies
+    if (loginResp.status === 302) {
+      const redirectUrl = loginResp.headers['location'] || '';
+      logger.info('Login redirect', { redirectUrl });
+
+      if (redirectUrl) {
+        const followResp = await this.client.get(redirectUrl, {
+          headers: { 'Cookie': this.sessionCookie },
+          maxRedirects: 5,
+          validateStatus: (s) => s < 400 || s === 302,
+        });
+        const followCookies = followResp.headers['set-cookie'] || [];
+        if (followCookies.length > 0) {
+          const allFollowCookies = [...allCookies, ...followCookies];
+          this.sessionCookie = allFollowCookies.map((c: string) => c.split(';')[0]).join('; ');
+        }
+      }
+    }
+
     if (!this.sessionCookie.includes('.ASPXAUTH') && !this.sessionCookie.includes('ASP.NET_SessionId')) {
+      logger.error('Login may have failed', { cookies: this.sessionCookie.substring(0, 200) });
       throw new Error('Login failed - no auth cookie received');
     }
 
