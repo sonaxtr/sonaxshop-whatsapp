@@ -327,7 +327,11 @@ webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) 
 /**
  * POST /api/members — Fetch ALL active Ticimax members via SOAP API
  * Used by campaign dashboard to sync contacts (not just cart report)
- * Paginates through all members and returns consolidated list
+ *
+ * Strategy:
+ * 1. Bulk SelectUyeler (KayitSayisi=10000) — gets all member records
+ * 2. For members without phone, individual selectUyelerById lookups
+ *    (individual lookups often return phone data that bulk doesn't)
  */
 webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -341,59 +345,85 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    const PAGE_SIZE = 100;
-    const MAX_PAGES = 50; // Safety limit: max 5000 members
-    const allMembers: any[] = [];
-    let page = 1;
-    let hasMore = true;
-
+    // Step 1: Bulk fetch with large page size to get ALL members at once
     logger.info('Starting full member sync via SOAP API');
 
-    while (hasMore && page <= MAX_PAGES) {
-      try {
-        const xml = await soapClient.selectAllUyeler(page, PAGE_SIZE);
-        const members = await xmlParser.parseUyeler(xml);
+    const xml = await soapClient.selectAllUyeler(1, 10000);
+    const members = await xmlParser.parseUyeler(xml);
 
-        if (members.length === 0) {
-          hasMore = false;
-          break;
-        }
+    logger.info(`Bulk SelectUyeler returned ${members.length} members`);
 
-        for (const m of members) {
-          // Normalize phone: prefer CepTelefonu, fallback to Telefon
-          const rawPhone = m.cepTelefonu || m.telefon || '';
-          const phone = normalizePhoneForMembers(rawPhone);
+    // Deduplicate by ID
+    const memberMap = new Map<number, any>();
+    for (const m of members) {
+      if (memberMap.has(m.id)) continue;
+      const rawPhone = m.cepTelefonu || m.telefon || '';
+      const phone = normalizePhoneForMembers(rawPhone);
 
-          allMembers.push({
-            uyeId: m.id,
-            name: `${m.isim} ${m.soyisim}`.trim(),
-            email: m.mail || '',
-            phone: phone || '',
-            smsPermit: m.smsIzin,
-            mailPermit: m.mailIzin,
-            city: m.il || '',
-          });
-        }
-
-        logger.info(`Members page ${page}: ${members.length} records (total: ${allMembers.length})`);
-
-        if (members.length < PAGE_SIZE) {
-          hasMore = false;
-        }
-
-        page++;
-      } catch (pageError: any) {
-        logger.error(`Members page ${page} failed`, { error: pageError.message });
-        hasMore = false;
-      }
+      memberMap.set(m.id, {
+        uyeId: m.id,
+        name: `${m.isim} ${m.soyisim}`.trim(),
+        email: m.mail || '',
+        phone: phone || '',
+        smsPermit: m.smsIzin,
+        mailPermit: m.mailIzin,
+        city: m.il || '',
+      });
     }
 
-    logger.info(`Member sync complete: ${allMembers.length} total members`);
+    const withPhone = [...memberMap.values()].filter(m => m.phone).length;
+    const withoutPhone = [...memberMap.values()].filter(m => !m.phone);
+
+    logger.info(`Bulk query: ${memberMap.size} unique, ${withPhone} with phone, ${withoutPhone.length} without`);
+
+    // Step 2: Individual phone lookups for members without phones
+    // (selectUyelerById often returns phone data that bulk query doesn't)
+    if (withoutPhone.length > 0 && withoutPhone.length <= 200) {
+      logger.info(`Looking up phones for ${withoutPhone.length} members individually`);
+
+      const BATCH = 5;
+      let phonesFound = 0;
+
+      for (let i = 0; i < withoutPhone.length; i += BATCH) {
+        const batch = withoutPhone.slice(i, i + BATCH);
+        await Promise.all(batch.map(async (member) => {
+          try {
+            const memberXml = await soapClient.selectUyelerById(member.uyeId);
+            // Extract phone from individual lookup XML
+            const cepMatch = memberXml.match(/<a:CepTelefonu>([^<]*)</);
+            const telMatch = memberXml.match(/<a:Telefon>([^<]*)</);
+            const rawPhone = (cepMatch ? cepMatch[1] : '') || (telMatch ? telMatch[1] : '');
+            const phone = normalizePhoneForMembers(rawPhone);
+
+            if (phone) {
+              member.phone = phone;
+              memberMap.set(member.uyeId, member);
+              phonesFound++;
+            }
+
+            // Also extract SmsIzin/MailIzin from individual lookup
+            const smsMatch = memberXml.match(/<a:SmsIzin>([^<]*)</);
+            const mailMatch = memberXml.match(/<a:MailIzin>([^<]*)</);
+            if (smsMatch) member.smsPermit = smsMatch[1] === 'true';
+            if (mailMatch) member.mailPermit = mailMatch[1] === 'true';
+          } catch {
+            // Skip failed lookups silently
+          }
+        }));
+      }
+
+      logger.info(`Individual lookups found ${phonesFound} additional phones`);
+    }
+
+    const allMembers = [...memberMap.values()];
+    const finalWithPhone = allMembers.filter(m => m.phone).length;
+
+    logger.info(`Member sync complete: ${allMembers.length} total, ${finalWithPhone} with phones`);
 
     res.json({
       members: allMembers,
       totalRecords: allMembers.length,
-      pagesScanned: page - 1,
+      withPhone: finalWithPhone,
       source: 'soap-api',
     });
   } catch (error: any) {
