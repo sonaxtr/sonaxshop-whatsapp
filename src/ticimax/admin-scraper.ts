@@ -119,6 +119,7 @@ export class TicimaxAdminScraper {
         '--metrics-recording-only',
         '--no-first-run',
         '--window-size=1366,768',
+        '--lang=en-US',
       ],
     });
 
@@ -126,15 +127,36 @@ export class TicimaxAdminScraper {
   }
 
   /**
-   * Wait for Cloudflare JS challenge to resolve
-   * The challenge page shows "Just a moment..." title while JS runs
+   * Check if page title indicates a Cloudflare challenge
+   * Cloudflare shows localized titles: "Just a moment..." (EN), "Bir dakika lütfen..." (TR), etc.
    */
-  private async waitForCloudflare(page: Page, maxWaitMs: number = 25000): Promise<void> {
+  private isCloudflareChallenge(title: string): boolean {
+    const lower = title.toLowerCase();
+    return (
+      lower.includes('just a moment') ||
+      lower.includes('bir dakika') ||       // Turkish
+      lower.includes('un moment') ||         // French
+      lower.includes('einen moment') ||      // German
+      lower.includes('un momento') ||        // Spanish/Italian
+      lower.includes('cloudflare') ||
+      lower.includes('challenge') ||
+      lower === ''                           // Empty title during challenge load
+    );
+  }
+
+  /**
+   * Wait for Cloudflare JS challenge to resolve
+   * The challenge page shows localized "Just a moment..." title while JS runs
+   */
+  private async waitForCloudflare(page: Page, maxWaitMs: number = 30000): Promise<void> {
     const startTime = Date.now();
+
+    // Initial wait for page to settle
+    await new Promise((r) => setTimeout(r, 2000));
 
     while (Date.now() - startTime < maxWaitMs) {
       const title = await page.title();
-      if (!title.toLowerCase().includes('just a moment')) {
+      if (!this.isCloudflareChallenge(title)) {
         logger.info('Page ready (Cloudflare passed)', {
           title,
           elapsed: Math.round((Date.now() - startTime) / 1000) + 's',
@@ -142,14 +164,15 @@ export class TicimaxAdminScraper {
         return;
       }
       logger.info('Waiting for Cloudflare challenge...', {
+        title,
         elapsed: Math.round((Date.now() - startTime) / 1000) + 's',
       });
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 3000));
     }
 
     const finalTitle = await page.title();
-    if (finalTitle.toLowerCase().includes('just a moment')) {
-      throw new Error(`Cloudflare challenge not resolved in ${maxWaitMs / 1000}s`);
+    if (this.isCloudflareChallenge(finalTitle)) {
+      throw new Error(`Cloudflare challenge not resolved in ${maxWaitMs / 1000}s. Title: ${finalTitle}`);
     }
   }
 
@@ -165,7 +188,7 @@ export class TicimaxAdminScraper {
     );
     await page.setViewport({ width: 1366, height: 768 });
     await page.setExtraHTTPHeaders({
-      'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9,tr-TR;q=0.8,tr;q=0.7',
     });
 
     // Navigate to login page
