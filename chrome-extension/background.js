@@ -194,7 +194,30 @@ async function handleSyncCarts(port) {
     }
 
     console.log('[SonaxSync] Scraping complete. Total rows:', allRows.length);
-    sendProgress(`Tamamlandi! ${allRows.length} kayit bulundu.`);
+
+    // Deduplicate by uyeId - keep the row with the latest cartDate for each member
+    sendProgress('Tekrar eden kayitlar temizleniyor...');
+    const uniqueMap = new Map();
+    for (const row of allRows) {
+      const existing = uniqueMap.get(row.uyeId);
+      if (!existing) {
+        uniqueMap.set(row.uyeId, row);
+      } else {
+        // Keep the one with the latest cart date
+        // Turkish date format: DD.MM.YYYY HH:mm:ss
+        const parseDate = (s) => {
+          const m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?/);
+          if (!m) return 0;
+          return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime();
+        };
+        if (parseDate(row.cartDate) > parseDate(existing.cartDate)) {
+          uniqueMap.set(row.uyeId, row);
+        }
+      }
+    }
+    const dedupedRows = Array.from(uniqueMap.values());
+    console.log('[SonaxSync] Deduplication:', allRows.length, '->', dedupedRows.length, 'unique members');
+    sendProgress(`Tamamlandi! ${dedupedRows.length} tekil uye bulundu (${allRows.length} kayittan).`);
 
     // Close the Ticimax tab
     try {
@@ -205,14 +228,15 @@ async function handleSyncCarts(port) {
     port.postMessage({
       type: 'COMPLETE',
       data: {
-        rows: allRows,
-        totalRecords: allRows.length,
+        rows: dedupedRows,
+        totalRecords: dedupedRows.length,
+        rawTotal: allRows.length,
         totalPages,
         source: 'extension',
         syncedAt: new Date().toISOString(),
       },
     });
-    console.log('[SonaxSync] COMPLETE message sent with', allRows.length, 'rows');
+    console.log('[SonaxSync] COMPLETE message sent with', dedupedRows.length, 'unique rows');
   } catch (err) {
     console.error('[SonaxSync] Error in handleSyncCarts:', err);
     // Clean up tab on error
@@ -299,6 +323,18 @@ function scrapeCartReportPage() {
       .replace(/\s+/g, '')
       .replace(/\+/g, '');
 
+    // Extract cart GUID from action column (last cell)
+    let cartGuid = '';
+    const lastCell = cells[cells.length - 1];
+    if (lastCell) {
+      const sepetLink = lastCell.querySelector('a[href*="openUyeSepet"]');
+      if (sepetLink) {
+        const href = sepetLink.getAttribute('href') || '';
+        const guidMatch = href.match(/openUyeSepet\('([^']+)'\)/);
+        if (guidMatch) cartGuid = guidMatch[1];
+      }
+    }
+
     rows.push({
       uyeId,
       uyeName: cells[1].textContent.trim(),
@@ -308,6 +344,7 @@ function scrapeCartReportPage() {
       mailPermit: cells[5].textContent.trim().toLowerCase() === 'evet',
       productCount: parseInt(cells[6].textContent.trim()) || 0,
       cartDate: cells[7].textContent.trim(),
+      cartGuid,
     });
   }
 

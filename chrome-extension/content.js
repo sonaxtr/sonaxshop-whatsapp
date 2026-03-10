@@ -10,10 +10,20 @@
  */
 
 (function () {
+  // Prevent multiple content scripts from running simultaneously
+  // (Chrome may inject the script more than once after extension reload)
+  if (window.__sonaxSyncLoaded) {
+    console.log('[SonaxSync] Content script already loaded, skipping duplicate');
+    return;
+  }
+  window.__sonaxSyncLoaded = true;
+
   console.log('[SonaxSync] Content script loaded on', window.location.href);
 
   // Signal that extension is installed (dashboard page checks this attribute)
   document.documentElement.setAttribute('data-sonax-sync', 'installed');
+
+  let syncInProgress = false;
 
   // Listen for sync requests from the dashboard page
   window.addEventListener('message', (event) => {
@@ -21,12 +31,17 @@
     if (event.source !== window) return;
 
     if (event.data && event.data.type === 'SONAX_SYNC_REQUEST') {
+      if (syncInProgress) {
+        console.log('[SonaxSync] Sync already in progress, ignoring duplicate request');
+        return;
+      }
       console.log('[SonaxSync] Sync request received from page');
       startSync();
     }
   });
 
   function startSync() {
+    syncInProgress = true;
     let completed = false;
     let port;
 
@@ -37,6 +52,7 @@
       console.error('[SonaxSync] Failed to connect to background:', err);
 
       // Common error: "Extension context invalidated" - extension was reloaded but page wasn't refreshed
+      syncInProgress = false;
       const errorMsg = err.message || 'Extension baglantisi kurulamadi';
       let userMessage = errorMsg;
       if (errorMsg.includes('invalidated') || errorMsg.includes('context')) {
@@ -68,6 +84,7 @@
         );
       } else if (msg.type === 'COMPLETE') {
         completed = true;
+        syncInProgress = false;
         console.log(
           '[SonaxSync] Sync complete. Rows:',
           msg.data?.rows?.length || 0,
@@ -96,6 +113,7 @@
 
       // If not yet completed, notify dashboard of the disconnection
       if (!completed) {
+        syncInProgress = false;
         let errorMsg =
           lastError || 'Extension baglantisi kesildi (service worker durmus olabilir)';
 
