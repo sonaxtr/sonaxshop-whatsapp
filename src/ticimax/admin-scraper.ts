@@ -102,25 +102,32 @@ export class TicimaxAdminScraper {
 
     const browser = await puppeteer.launch({
       executablePath,
-      headless: true,
+      headless: 'new' as any, // Chrome's new headless mode (less detectable)
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--single-process',
         '--no-zygote',
+        // Anti-detection flags
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-ipc-flooding-protection',
+        '--enable-features=NetworkService,NetworkServiceInProcess',
+        // Standard flags
         '--disable-extensions',
-        '--disable-background-networking',
         '--disable-default-apps',
         '--disable-sync',
-        '--disable-translate',
         '--metrics-recording-only',
         '--no-first-run',
         '--window-size=1366,768',
         '--lang=en-US',
       ],
+      ignoreDefaultArgs: ['--enable-automation'], // Remove "Chrome is being controlled" flag
     });
 
     return browser as unknown as Browser;
@@ -183,13 +190,59 @@ export class TicimaxAdminScraper {
   private async loginAndGetPage(browser: Browser): Promise<Page> {
     const page = await browser.newPage();
 
+    // Realistic Chrome user agent (Chrome 131 on Windows)
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     );
-    await page.setViewport({ width: 1366, height: 768 });
+    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9,tr-TR;q=0.8,tr;q=0.7',
     });
+
+    // Manual stealth patches (safety net alongside stealth plugin)
+    await page.evaluateOnNewDocument(`
+      // Remove webdriver flag
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+      // Fake chrome object
+      window.chrome = {
+        runtime: { onConnect: { addListener: function(){} }, onMessage: { addListener: function(){} } },
+        loadTimes: function(){ return {} },
+        csi: function(){ return {} }
+      };
+
+      // Override permissions query
+      const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+      window.navigator.permissions.query = function(params) {
+        if (params.name === 'notifications') {
+          return Promise.resolve({ state: Notification.permission });
+        }
+        return originalQuery(params);
+      };
+
+      // Fake plugins array (non-empty)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+          { name: 'Native Client', filename: 'internal-nacl-plugin' },
+        ]
+      });
+
+      // Hardware concurrency
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+
+      // Languages
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'tr'] });
+
+      // WebGL vendor/renderer (fake real GPU)
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'Google Inc. (NVIDIA)';
+        if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0)';
+        return getParameter.call(this, parameter);
+      };
+    `);
 
     // Navigate to login page
     const loginUrl = `${this.baseUrl}/UyeGiris?ReturnUrl=%2fAdmin%2fLogin.aspx`;
