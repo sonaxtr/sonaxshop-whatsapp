@@ -208,9 +208,21 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/cart-report-v2 — Scrape UyeSepetRapor.aspx for full cart data
- * Returns 700+ records (vs 100 from SOAP SelectSepet)
- * All records have member info (name, email, phone, SMS/mail permissions)
+ * Cart data cache — stores data synced from local scraper
+ * Local script scrapes admin panel (no Cloudflare from residential IP)
+ * and POSTs the data here for dashboard consumption.
+ */
+let cartDataCache: {
+  rows: any[];
+  totalRecords: number;
+  syncedAt: string;
+  source: string;
+} | null = null;
+
+/**
+ * POST /api/cart-report-v2 — Return cached admin panel data
+ * Data is populated by local sync script via POST /api/cart-data-sync
+ * Falls through to Puppeteer scraper if no cached data available
  */
 webhookRoutes.post('/api/cart-report-v2', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -221,12 +233,20 @@ webhookRoutes.post('/api/cart-report-v2', async (req: Request, res: Response) =>
   }
 
   try {
+    // Return cached synced data if available (from local scraper)
+    if (cartDataCache && cartDataCache.rows.length > 0) {
+      logger.info('Returning synced cart data from cache', {
+        rows: cartDataCache.rows.length,
+        syncedAt: cartDataCache.syncedAt,
+      });
+      res.json(cartDataCache);
+      return;
+    }
+
+    // Fallback: try Puppeteer scraper (may fail due to Cloudflare)
     const { getAdminScraper } = await import('../ticimax/admin-scraper');
     const scraper = getAdminScraper();
-
-    // maxPages from request body (0 = all pages, default)
     const maxPages = req.body?.maxPages || 0;
-
     const result = await scraper.getCartReport(maxPages);
 
     res.json({
@@ -235,7 +255,71 @@ webhookRoutes.post('/api/cart-report-v2', async (req: Request, res: Response) =>
       source: 'admin-scraper',
     });
   } catch (error: any) {
-    logger.error('Cart report v2 scraper error', { error: error.message });
+    logger.error('Cart report v2 error', { error: error.message });
+    // If scraper fails but we have stale cache, return it with warning
+    if (cartDataCache && cartDataCache.rows.length > 0) {
+      logger.info('Returning stale cached data after scraper failure');
+      res.json({ ...cartDataCache, stale: true });
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
+});
+
+/**
+ * POST /api/cart-data-sync — Receive cart data from local sync script
+ * The local script runs on user's PC (residential IP = no Cloudflare),
+ * scrapes UyeSepetRapor.aspx, and POSTs the data here.
+ *
+ * Body: { rows: CartReportRow[], totalRecords: number }
+ */
+webhookRoutes.post('/api/cart-data-sync', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { rows, totalRecords } = req.body;
+
+    if (!rows || !Array.isArray(rows)) {
+      res.status(400).json({ error: 'Missing rows array in request body' });
+      return;
+    }
+
+    cartDataCache = {
+      rows,
+      totalRecords: totalRecords || rows.length,
+      syncedAt: new Date().toISOString(),
+      source: 'local-sync',
+    };
+
+    logger.info('Cart data synced from local scraper', {
+      rows: rows.length,
+      totalRecords: cartDataCache.totalRecords,
+    });
+
+    res.json({
+      success: true,
+      message: `Synced ${rows.length} cart records`,
+      syncedAt: cartDataCache.syncedAt,
+    });
+  } catch (error: any) {
+    logger.error('Cart data sync error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/cart-data-status — Check sync status
+ */
+webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) => {
+  res.json({
+    hasCachedData: !!cartDataCache,
+    rowCount: cartDataCache?.rows.length || 0,
+    syncedAt: cartDataCache?.syncedAt || null,
+    source: cartDataCache?.source || null,
+  });
 });
