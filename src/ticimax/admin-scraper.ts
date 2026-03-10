@@ -65,14 +65,38 @@ export class TicimaxAdminScraper {
       return;
     }
 
-    logger.info('Logging into Ticimax admin panel...');
+    logger.info('Logging into Ticimax admin panel...', { baseUrl: this.baseUrl, username: this.username });
 
     // Step 1: GET the UyeGiris page (member login) with admin ReturnUrl
     const loginUrl = '/UyeGiris?ReturnUrl=%2fAdmin%2fLogin.aspx';
-    const loginPageResp = await this.client.get(loginUrl, {
-      maxRedirects: 5,
-      validateStatus: (s) => s < 400,
-    });
+    let loginPageResp;
+    try {
+      loginPageResp = await this.client.get(loginUrl, {
+        maxRedirects: 5,
+        validateStatus: () => true, // Accept any status to debug
+      });
+      logger.info('Login page response', {
+        status: loginPageResp.status,
+        contentLength: loginPageResp.data?.length || 0,
+        hasCloudflare: loginPageResp.data?.includes?.('cf-') || false,
+        hasChallengeForm: loginPageResp.data?.includes?.('challenge-form') || false,
+        hasViewState: loginPageResp.data?.includes?.('__VIEWSTATE') || false,
+        title: loginPageResp.data?.match?.(/<title>([^<]*)<\/title>/)?.[1] || '',
+      });
+
+      if (loginPageResp.status === 403) {
+        throw new Error(`Login page blocked (403) - likely Cloudflare bot detection. Title: ${loginPageResp.data?.match?.(/<title>([^<]*)<\/title>/)?.[1] || 'unknown'}`);
+      }
+    } catch (err: any) {
+      if (err.response) {
+        logger.error('Login page request failed', {
+          status: err.response.status,
+          title: err.response.data?.match?.(/<title>([^<]*)<\/title>/)?.[1] || '',
+          isCloudflare: err.response.data?.includes?.('cloudflare') || false,
+        });
+      }
+      throw err;
+    }
 
     const $ = cheerio.load(loginPageResp.data);
     const viewState = $('input[name="__VIEWSTATE"]').val() as string || '';
