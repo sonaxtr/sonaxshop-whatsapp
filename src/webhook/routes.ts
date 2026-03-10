@@ -323,3 +323,93 @@ webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) 
     source: cartDataCache?.source || null,
   });
 });
+
+/**
+ * POST /api/members — Fetch ALL active Ticimax members via SOAP API
+ * Used by campaign dashboard to sync contacts (not just cart report)
+ * Paginates through all members and returns consolidated list
+ */
+webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+    const { xmlParser } = await import('../ticimax/xml-parser');
+
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 50; // Safety limit: max 5000 members
+    const allMembers: any[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    logger.info('Starting full member sync via SOAP API');
+
+    while (hasMore && page <= MAX_PAGES) {
+      try {
+        const xml = await soapClient.selectAllUyeler(page, PAGE_SIZE);
+        const members = await xmlParser.parseUyeler(xml);
+
+        if (members.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        for (const m of members) {
+          // Normalize phone: prefer CepTelefonu, fallback to Telefon
+          const rawPhone = m.cepTelefonu || m.telefon || '';
+          const phone = normalizePhoneForMembers(rawPhone);
+
+          allMembers.push({
+            uyeId: m.id,
+            name: `${m.isim} ${m.soyisim}`.trim(),
+            email: m.mail || '',
+            phone: phone || '',
+            smsPermit: m.smsIzin,
+            mailPermit: m.mailIzin,
+            city: m.il || '',
+          });
+        }
+
+        logger.info(`Members page ${page}: ${members.length} records (total: ${allMembers.length})`);
+
+        if (members.length < PAGE_SIZE) {
+          hasMore = false;
+        }
+
+        page++;
+      } catch (pageError: any) {
+        logger.error(`Members page ${page} failed`, { error: pageError.message });
+        hasMore = false;
+      }
+    }
+
+    logger.info(`Member sync complete: ${allMembers.length} total members`);
+
+    res.json({
+      members: allMembers,
+      totalRecords: allMembers.length,
+      pagesScanned: page - 1,
+      source: 'soap-api',
+    });
+  } catch (error: any) {
+    logger.error('Members API error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Normalize Turkish phone to 905XXXXXXXXX format
+ */
+function normalizePhoneForMembers(phone: string): string {
+  if (!phone) return '';
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('05')) cleaned = '9' + cleaned;
+  if (cleaned.startsWith('5') && cleaned.length === 10) cleaned = '90' + cleaned;
+  if (cleaned.length < 10) return '';
+  return cleaned;
+}

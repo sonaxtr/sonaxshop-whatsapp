@@ -193,6 +193,9 @@ export class TicimaxXmlParser {
         mail: u.Mail || '',
         cepTelefonu: u.CepTelefonu || '',
         telefon: u.Telefon || '',
+        smsIzin: u.SmsIzin === 'true' || u.SmsIzin === true,
+        mailIzin: u.MailIzin === 'true' || u.MailIzin === true,
+        il: u.Il || u.Sehir || '',
       }));
     } catch (error: any) {
       logger.error('Parse uyeler error', { error: error.message });
@@ -321,6 +324,9 @@ export interface UyeResult {
   mail: string;
   cepTelefonu: string;
   telefon: string;
+  smsIzin: boolean;
+  mailIzin: boolean;
+  il: string;
 }
 
 export interface KategoriResult {

@@ -228,6 +228,33 @@ export class TicimaxSoapClient {
   }
 
   /**
+   * Fetch ALL active members with pagination
+   * Returns raw XML for each page
+   */
+  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100): Promise<string> {
+    const body = `<tem:SelectUyeler>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:filtre>
+        <ns:Aktif>1</ns:Aktif>
+        <ns:AlisverisYapti>-1</ns:AlisverisYapti>
+        <ns:Cinsiyet>-1</ns:Cinsiyet>
+        <ns:MailIzin>-1</ns:MailIzin>
+        <ns:SmsIzin>-1</ns:SmsIzin>
+        <ns:Telefon></ns:Telefon>
+        <ns:UyeID>-1</ns:UyeID>
+      </tem:filtre>
+      <tem:sayfalama>
+        <ns:KayitSayisi>${kayitSayisi}</ns:KayitSayisi>
+        <ns:SiralamaDegeri>id</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>Asc</ns:SiralamaYonu>
+        <ns:SayfaNo>${sayfaNo}</ns:SayfaNo>
+      </tem:sayfalama>
+    </tem:SelectUyeler>`;
+
+    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
+  }
+
+  /**
    * Get member details by UyeID
    */
   async selectUyelerById(uyeId: number): Promise<string> {
