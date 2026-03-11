@@ -231,14 +231,14 @@ export class TicimaxSoapClient {
    * Fetch ALL active members with pagination
    * Returns raw XML for each page
    */
-  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100, smsIzin: number = -1): Promise<string> {
+  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100, smsIzin: number = -1, mailIzin: number = -1): Promise<string> {
     const body = `<tem:SelectUyeler>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:filtre>
         <ns:Aktif>1</ns:Aktif>
         <ns:AlisverisYapti>-1</ns:AlisverisYapti>
         <ns:Cinsiyet>-1</ns:Cinsiyet>
-        <ns:MailIzin>-1</ns:MailIzin>
+        <ns:MailIzin>${mailIzin}</ns:MailIzin>
         <ns:SmsIzin>${smsIzin}</ns:SmsIzin>
         <ns:Telefon></ns:Telefon>
         <ns:UyeID>-1</ns:UyeID>

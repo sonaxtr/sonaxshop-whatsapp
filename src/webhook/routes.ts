@@ -374,47 +374,70 @@ async function doFullMemberSync(): Promise<void> {
     logger.info('=== Starting FULL member sync (background) ===');
 
     const memberMap = new Map<number, MemberCacheEntry>();
-    let pageNo = 1;
-    const PAGE_SIZE = 20000; // KayitSayisi = total record limit (not page size)
+    const RECORD_LIMIT = 20000; // KayitSayisi = total record limit
 
-    // Step 1: Multi-page SOAP fetch (SmsIzin=1 — only SMS-permitted members)
-    while (true) {
-      logger.info(`Fetching SOAP page ${pageNo} (SmsIzin=1, KayitSayisi=${PAGE_SIZE})...`);
+    // Step 1a: Fetch SMS-permitted members (SmsIzin=1)
+    logger.info(`Fetching SMS-permitted members (KayitSayisi=${RECORD_LIMIT})...`);
+    const smsXml = await soapClient.selectAllUyeler(1, RECORD_LIMIT, 1, -1);
+    const smsMembers = await xmlParser.parseUyeler(smsXml);
+    logger.info(`SMS-permitted: ${smsMembers.length} members returned`);
 
-      const xml = await soapClient.selectAllUyeler(pageNo, PAGE_SIZE, 1);
-      const members = await xmlParser.parseUyeler(xml);
+    for (const m of smsMembers) {
+      if (memberMap.has(m.id)) continue;
+      const rawPhone = m.cepTelefonu || m.telefon || '';
+      const phone = normalizePhoneForMembers(rawPhone);
 
-      logger.info(`Page ${pageNo}: ${members.length} members returned`);
-
-      if (members.length === 0) break;
-
-      for (const m of members) {
-        if (memberMap.has(m.id)) continue;
-        const rawPhone = m.cepTelefonu || m.telefon || '';
-        const phone = normalizePhoneForMembers(rawPhone);
-
-        memberMap.set(m.id, {
-          uyeId: m.id,
-          name: `${m.isim} ${m.soyisim}`.trim(),
-          email: m.mail || '',
-          phone: phone || '',
-          smsPermit: m.smsIzin,
-          mailPermit: m.mailIzin,
-          city: m.il || '',
-        });
-      }
-
-      logger.info(`Cumulative unique members after page ${pageNo}: ${memberMap.size}`);
-
-      if (members.length < PAGE_SIZE) break; // Last page
-      pageNo++;
-      if (pageNo > 15) break; // Safety: max 30K members
+      memberMap.set(m.id, {
+        uyeId: m.id,
+        name: `${m.isim} ${m.soyisim}`.trim(),
+        email: m.mail || '',
+        phone: phone || '',
+        smsPermit: m.smsIzin,
+        mailPermit: m.mailIzin,
+        city: m.il || '',
+      });
     }
+
+    logger.info(`After SMS fetch: ${memberMap.size} unique members`);
+
+    // Step 1b: Fetch Mail-permitted members (MailIzin=1)
+    logger.info(`Fetching Mail-permitted members (KayitSayisi=${RECORD_LIMIT})...`);
+    const mailXml = await soapClient.selectAllUyeler(1, RECORD_LIMIT, -1, 1);
+    const mailMembers = await xmlParser.parseUyeler(mailXml);
+    logger.info(`Mail-permitted: ${mailMembers.length} members returned`);
+
+    let newFromMail = 0;
+    for (const m of mailMembers) {
+      if (memberMap.has(m.id)) {
+        // Already have this member from SMS query — update mailPermit if needed
+        const existing = memberMap.get(m.id)!;
+        if (m.mailIzin && !existing.mailPermit) {
+          existing.mailPermit = true;
+          memberMap.set(m.id, existing);
+        }
+        continue;
+      }
+      const rawPhone = m.cepTelefonu || m.telefon || '';
+      const phone = normalizePhoneForMembers(rawPhone);
+
+      memberMap.set(m.id, {
+        uyeId: m.id,
+        name: `${m.isim} ${m.soyisim}`.trim(),
+        email: m.mail || '',
+        phone: phone || '',
+        smsPermit: m.smsIzin,
+        mailPermit: m.mailIzin,
+        city: m.il || '',
+      });
+      newFromMail++;
+    }
+
+    logger.info(`After Mail fetch: ${memberMap.size} unique members (+${newFromMail} new from mail query)`);
 
     const withPhoneCount = [...memberMap.values()].filter(m => m.phone).length;
     const withoutPhone = [...memberMap.values()].filter(m => !m.phone);
 
-    logger.info(`After ${pageNo} page(s): ${memberMap.size} unique members, ${withPhoneCount} with phone, ${withoutPhone.length} without`);
+    logger.info(`Total: ${memberMap.size} unique members, ${withPhoneCount} with phone, ${withoutPhone.length} without`);
 
     // Step 2: Individual phone lookups for ALL members without phones
     // No limit! The bulk query often omits CepTelefonu, but selectUyelerById returns it
@@ -473,20 +496,21 @@ async function doFullMemberSync(): Promise<void> {
       logger.info(`Individual lookups complete: ${phonesFoundViaLookup} additional phones found in ${totalElapsed}s`);
     }
 
-    // Only keep members WITH phone numbers
-    const membersWithPhone = [...memberMap.values()].filter(m => m.phone);
+    // Keep ALL members with SMS or mail permission (not just phone holders)
+    const allPermittedMembers = [...memberMap.values()];
+    const membersWithPhone = allPermittedMembers.filter(m => m.phone);
 
     // Update cache
     memberCache = {
-      members: membersWithPhone,
+      members: allPermittedMembers,
       totalInSystem: memberMap.size,
       syncedAt: new Date(),
-      pagesScanned: pageNo,
+      pagesScanned: 2, // Two queries: SMS + Mail
       individualLookups: withoutPhone.length,
       phonesFoundViaLookup,
     };
 
-    logger.info(`=== Full member sync COMPLETE: ${membersWithPhone.length} members with phones (${memberMap.size} total in system) ===`);
+    logger.info(`=== Full member sync COMPLETE: ${allPermittedMembers.length} total members (${membersWithPhone.length} with phones, ${memberMap.size} in system) ===`);
 
   } catch (error: any) {
     logger.error('Full member sync error', { error: error.message, stack: error.stack });
@@ -542,13 +566,13 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
       });
     }
 
-    // Case 3: No cache at all → quick page-1 bulk fetch + trigger full sync
-    logger.info('No cache available, doing quick page-1 bulk fetch');
+    // Case 3: No cache at all → quick SMS-permitted fetch + trigger full sync (SMS+Mail)
+    logger.info('No cache available, doing quick SMS-permitted fetch');
 
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    const xml = await soapClient.selectAllUyeler(1, 20000, 1); // SmsIzin=1, get all records
+    const xml = await soapClient.selectAllUyeler(1, 20000, 1, -1); // SmsIzin=1 quick fetch
     const members = await xmlParser.parseUyeler(xml);
 
     const quickMembers: MemberCacheEntry[] = [];
