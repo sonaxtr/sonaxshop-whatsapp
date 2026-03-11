@@ -374,7 +374,7 @@ async function doFullMemberSync(): Promise<void> {
     logger.info('=== Starting FULL member sync (background) ===');
 
     const memberMap = new Map<number, MemberCacheEntry>();
-    const RECORD_LIMIT = 20000; // KayitSayisi = total record limit
+    const RECORD_LIMIT = 25000; // KayitSayisi = total record limit
 
     // Step 1a: Fetch SMS-permitted members (SmsIzin=1)
     logger.info(`Fetching SMS-permitted members (KayitSayisi=${RECORD_LIMIT})...`);
@@ -572,7 +572,7 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    const xml = await soapClient.selectAllUyeler(1, 20000, 1, -1); // SmsIzin=1 quick fetch
+    const xml = await soapClient.selectAllUyeler(1, 25000, 1, -1); // SmsIzin=1 quick fetch
     const members = await xmlParser.parseUyeler(xml);
 
     const quickMembers: MemberCacheEntry[] = [];
