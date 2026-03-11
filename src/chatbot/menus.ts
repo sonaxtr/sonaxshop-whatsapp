@@ -35,7 +35,6 @@ export const ONLINE_MENU_SECTIONS: ListSection[] = [
     rows: [
       { id: 'menu_siparis', title: 'Sipariş Hakkında', description: 'Sipariş sorgulama ve takip' },
       { id: 'menu_iade', title: 'İade ve Değişim Süreci', description: 'İade süreci bilgilendirme' },
-      { id: 'menu_kampanya', title: 'Kampanyalar', description: 'Güncel kampanyalar' },
       { id: 'menu_odeme', title: 'Ödeme Taksitlendirme', description: 'Ödeme yöntemleri ve IBAN' },
       { id: 'menu_uyelik', title: 'Üyelik', description: 'Üyelik bilgileri' },
       { id: 'menu_diger', title: 'Diğer', description: 'Temsilciye bağlanma' },
@@ -96,23 +95,6 @@ export const URUN_MENU_SECTIONS: ListSection[] = [
 ];
 
 // ============================
-// KAMPANYA ALT MENÜ
-// ============================
-export const KAMPANYA_MENU_TEXT = `Kampanyalar hakkında seçiniz:`;
-
-export const KAMPANYA_MENU_SECTIONS: ListSection[] = [
-  {
-    title: 'Kampanya İşlemleri',
-    rows: [
-      { id: 'kampanya_guncel', title: 'Güncel Kampanyalar', description: 'Aktif kampanyaları gör' },
-      { id: 'kampanya_hediye', title: 'Hediye Çeki Sorgula', description: 'Hediye çeki kodu ile sorgulama' },
-      { id: 'menu_ust', title: 'Üst Menüye Dön ⬆️', description: 'Online menüye geri dön' },
-      { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },
-    ],
-  },
-];
-
-// ============================
 // ÖDEME ALT MENÜ
 // ============================
 export const ODEME_MENU_TEXT = `Ödeme hakkında seçiniz:`;
@@ -142,7 +124,6 @@ export const MAGAZA_MENU_SECTIONS: ListSection[] = [
       { id: 'magaza_en_yakin', title: 'En Yakın Sonax', description: 'Konumunuza en yakın merkez' },
       { id: 'magaza_sorgula', title: 'Merkez Sorgulama', description: 'İl bazlı uygulama merkezi arama' },
       { id: 'magaza_fiyat', title: 'Fiyat Listesi', description: 'Uygulama hizmetleri fiyat listesi' },
-      { id: 'magaza_kampanya', title: 'Kampanyalar', description: 'Güncel kampanya bilgileri' },
       { id: 'magaza_temsilci', title: 'Temsilciye Bağlan', description: 'Canlı destek' },
       { id: 'menu_ana', title: 'Ana Menüye Dön 🏠', description: 'Kanal seçimine geri dön' },
     ],

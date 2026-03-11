@@ -6,7 +6,6 @@ import { soapClient } from '../ticimax/soap-client';
 import { xmlParser } from '../ticimax/xml-parser';
 import * as menus from './menus';
 import { handleUrunAction } from './handlers/urun';
-import { handleKampanyaAction } from './handlers/kampanya';
 import { handleMagazaAction } from './handlers/magaza';
 import { handleKategoriAction } from './handlers/kategori';
 import { createConversation, forwardMessage, getConversationStatus, closeConversation } from './live-agent';
@@ -217,14 +216,6 @@ class ChatbotRouter {
         await handleUrunAction(from, input, 'urun_arama_input');
         break;
 
-      case 'kampanya_menu':
-        await this.handleKampanyaMenu(from, input, message);
-        break;
-
-      case 'kampanya_hediye_input':
-        await handleKampanyaAction(from, input, 'kampanya_hediye_input');
-        break;
-
       case 'odeme_menu':
         await this.handleOdemeMenu(from, input);
         break;
@@ -331,20 +322,6 @@ class ChatbotRouter {
       case 'menu_iade':
         await whatsappApi.sendText(from, menus.IADE_TEXT);
         await this.showBackButtonsWithTemsilci(from);
-        break;
-      case 'menu_kampanya':
-        await whatsappApi.sendText(from,
-          '🎁 *Güncel Kampanyalar*\n\n' +
-          'Güncel kampanyalarımız için:\n' +
-          '🔗 https://sonax.com.tr/kampanyalar'
-        );
-        await whatsappApi.sendCTAUrl(
-          from,
-          'Instagramdan da takip edebilirsiniz:',
-          'Instagramda Takip Et',
-          'https://www.instagram.com/sonax.turkiye'
-        );
-        await this.showBackButtons(from);
         break;
       case 'menu_odeme':
         await whatsappApi.sendList(from, menus.ODEME_MENU_TEXT, 'Seçenekler', menus.ODEME_MENU_SECTIONS, '💳 Ödeme');
@@ -474,25 +451,6 @@ class ChatbotRouter {
   }
 
   // ============================
-  // KAMPANYA MENU
-  // ============================
-
-  private async handleKampanyaMenu(from: string, input: string, message: WebhookMessage): Promise<void> {
-    switch (input) {
-      case 'kampanya_guncel':
-        await handleKampanyaAction(from, input, 'kampanya_guncel');
-        break;
-      case 'kampanya_hediye':
-        await whatsappApi.sendText(from, '🎁 Hediye çeki kodunuzu yazınız:');
-        updateSession(from, { currentMenu: 'kampanya_hediye_input' });
-        break;
-      default:
-        await whatsappApi.sendList(from, menus.KAMPANYA_MENU_TEXT, 'Seçenekler', menus.KAMPANYA_MENU_SECTIONS, '🎁 Kampanyalar');
-        break;
-    }
-  }
-
-  // ============================
   // ÖDEME MENU
   // ============================
 
@@ -547,20 +505,6 @@ class ChatbotRouter {
       case 'magaza_sorgula':
         await whatsappApi.sendText(from, '📍 Hangi il için uygulama merkezi aramak istiyorsunuz?\n\n_(Örnek: İstanbul)_');
         updateSession(from, { currentMenu: 'magaza_sorgula_input' });
-        break;
-      case 'magaza_kampanya':
-        await whatsappApi.sendText(from,
-          '🎁 *Güncel Kampanyalar*\n\n' +
-          'Güncel kampanyalarımız için:\n' +
-          '🔗 https://sonax.com.tr/kampanyalar'
-        );
-        await whatsappApi.sendCTAUrl(
-          from,
-          'Instagramdan da takip edebilirsiniz:',
-          'Instagramda Takip Et',
-          'https://www.instagram.com/sonax.turkiye'
-        );
-        await this.showBackButtons(from);
         break;
       case 'magaza_temsilci':
         await this.startLiveAgent(from, '', 'uygulama');
