@@ -45,6 +45,17 @@
     let completed = false;
     let port;
 
+    // Check if extension context is still valid
+    if (!chrome?.runtime?.connect) {
+      console.error('[SonaxSync] chrome.runtime is not available - extension context invalidated');
+      syncInProgress = false;
+      window.postMessage(
+        { type: 'SONAX_SYNC_COMPLETE', data: { error: 'Extension yeniden yuklendi - lutfen sayfayi yenileyiniz (F5)' } },
+        '*'
+      );
+      return;
+    }
+
     try {
       port = chrome.runtime.connect({ name: 'sonax-sync' });
       console.log('[SonaxSync] Port connected to background');
@@ -55,7 +66,7 @@
       syncInProgress = false;
       const errorMsg = err.message || 'Extension baglantisi kurulamadi';
       let userMessage = errorMsg;
-      if (errorMsg.includes('invalidated') || errorMsg.includes('context')) {
+      if (errorMsg.includes('invalidated') || errorMsg.includes('context') || errorMsg.includes('undefined')) {
         userMessage = 'Extension yeniden yuklendi - lutfen sayfayi yenileyiniz (F5)';
       } else if (errorMsg.includes('Receiving end does not exist')) {
         userMessage =

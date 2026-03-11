@@ -348,7 +348,7 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
     // Step 1: Bulk fetch with large page size to get ALL members at once
     logger.info('Starting full member sync via SOAP API');
 
-    const xml = await soapClient.selectAllUyeler(1, 50000);
+    const xml = await soapClient.selectAllUyeler(1, 10000);
     const members = await xmlParser.parseUyeler(xml);
 
     logger.info(`Bulk SelectUyeler returned ${members.length} members`);

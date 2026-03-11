@@ -104,8 +104,10 @@ async function handleSyncCarts(port) {
     sendProgress('Sayfa boyutu ayarlaniyor...');
 
     // Step 3: Set page size to 100 (max) for fewer pages
+    // IMPORTANT: world:'MAIN' is required to access page JS functions like __doPostBack
     const pageSizeResult = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
+      world: 'MAIN',
       func: () => {
         const sel = document.getElementById('cphPageContent_ddlKayitSayisi');
         if (sel && sel.value !== '100') {
@@ -129,6 +131,42 @@ async function handleSyncCarts(port) {
       await waitForNavigation(tab.id);
     }
 
+    // Step 3.5: Debug - capture page structure info before scraping
+    const debugResult = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => {
+        const bodyText = document.body.innerText || '';
+        // Find pagination text
+        const pagMatch = bodyText.match(/Toplam[\s\S]{0,200}?kayit[\s\S]{0,100}?bulun\S*/i) ||
+                         bodyText.match(/Toplam[\s\S]{0,200}?sayfa\S*/);
+        const paginationText = pagMatch ? pagMatch[0].substring(0, 300) : 'NOT FOUND';
+
+        // Find all buttons with "Sonraki" or next-like text
+        const allBtns = [];
+        document.querySelectorAll('a, input, button').forEach((el) => {
+          const text = (el.textContent || '').trim();
+          const id = el.id || '';
+          const href = el.getAttribute('href') || '';
+          if (id.includes('Sonraki') || id.includes('sonraki') ||
+              text.includes('Sonraki') || text.includes('>') ||
+              href.includes('Sonraki') || href.includes('btnSonraki')) {
+            allBtns.push({
+              tag: el.tagName, id, text: text.substring(0, 50),
+              href: href.substring(0, 150),
+              disabled: el.disabled || false,
+            });
+          }
+        });
+
+        // Check __doPostBack availability
+        const hasDoPostBack = typeof __doPostBack === 'function';
+
+        return { paginationText, buttons: allBtns, hasDoPostBack };
+      },
+    });
+    console.log('[SonaxSync] DEBUG - Page structure:', JSON.stringify(debugResult[0]?.result, null, 2));
+
     // Step 4: Scrape all pages
     const allRows = [];
     let currentPage = 1;
@@ -139,6 +177,7 @@ async function handleSyncCarts(port) {
 
       const scrapeResult = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
+        world: 'MAIN',
         func: scrapeCartReportPage,
       });
 
@@ -146,6 +185,7 @@ async function handleSyncCarts(port) {
       console.log('[SonaxSync] Page', currentPage, 'scrape result:', {
         rows: pageData?.rows?.length,
         totalPages: pageData?.totalPages,
+        currentPageNum: pageData?.currentPageNum,
         error: pageData?.error,
       });
 
@@ -164,33 +204,120 @@ async function handleSyncCarts(port) {
       // Check if more pages exist
       if (currentPage >= totalPages) break;
 
-      // Click "next" button for pagination
+      // Click "next" button for pagination using __doPostBack
+      // IMPORTANT: world:'MAIN' is required to access __doPostBack
       const nextResult = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
+        world: 'MAIN',
         func: () => {
+          // Strategy 1: Use __doPostBack directly (most reliable for ASP.NET)
+          if (typeof __doPostBack === 'function') {
+            // Try common ASP.NET postback target names for "next" button
+            const possibleTargets = [
+              'ctl00$cphPageContent$btnSonraki',
+              'cphPageContent$btnSonraki',
+            ];
+
+            // Also try to extract the target from the button's href
+            const btn =
+              document.getElementById('cphPageContent_btnSonraki') ||
+              document.querySelector('a[id*="btnSonraki"]') ||
+              document.querySelector('input[id*="btnSonraki"]');
+
+            if (btn) {
+              const href = btn.getAttribute('href') || '';
+              const onclickAttr = btn.getAttribute('onclick') || '';
+              const btnTag = btn.tagName;
+              const btnType = btn.type || '';
+
+              console.log('[SonaxSync-page] Next button found:', {
+                tag: btnTag, id: btn.id, type: btnType,
+                href: href.substring(0, 100),
+                onclick: onclickAttr.substring(0, 100),
+                disabled: btn.disabled,
+              });
+
+              // Extract __doPostBack target from href like: javascript:__doPostBack('target','')
+              const postbackMatch = href.match(/__doPostBack\('([^']+)'/);
+              if (postbackMatch) {
+                possibleTargets.unshift(postbackMatch[1]); // Add extracted target first
+              }
+
+              // For input/button types, just click (they submit forms)
+              if (btnTag === 'INPUT' || btnTag === 'BUTTON') {
+                btn.click();
+                return { clicked: true, method: 'input-click', target: btn.id };
+              }
+            }
+
+            // Execute __doPostBack with the first available target
+            for (const target of possibleTargets) {
+              try {
+                __doPostBack(target, '');
+                return { clicked: true, method: '__doPostBack', target };
+              } catch (e) {
+                console.warn('[SonaxSync-page] __doPostBack failed for', target, e.message);
+              }
+            }
+          }
+
+          // Strategy 2: Click the button element directly (fallback)
           const btn =
             document.getElementById('cphPageContent_btnSonraki') ||
             document.querySelector('a[id*="btnSonraki"]') ||
             document.querySelector('input[id*="btnSonraki"]');
+
           if (btn) {
+            // For <a> tags with javascript: href, eval the href
+            const href = btn.getAttribute('href') || '';
+            if (href.startsWith('javascript:')) {
+              try {
+                eval(href.replace('javascript:', ''));
+                return { clicked: true, method: 'eval-href', target: btn.id };
+              } catch (e) {
+                console.warn('[SonaxSync-page] eval href failed:', e.message);
+              }
+            }
+
             btn.click();
-            return true;
+            return { clicked: true, method: 'click-fallback', target: btn.id };
           }
-          return false;
+
+          // Strategy 3: Look for any pagination links
+          const paginationLinks = document.querySelectorAll('a[href*="__doPostBack"][href*="Sonraki"]');
+          if (paginationLinks.length > 0) {
+            const href = paginationLinks[0].getAttribute('href') || '';
+            const m = href.match(/__doPostBack\('([^']+)'/);
+            if (m) {
+              __doPostBack(m[1], '');
+              return { clicked: true, method: 'pagination-link', target: m[1] };
+            }
+          }
+
+          return { clicked: false, method: 'none' };
         },
       });
 
-      console.log('[SonaxSync] Next button clicked:', nextResult[0]?.result);
+      const clickInfo = nextResult[0]?.result;
+      console.log('[SonaxSync] Next button result:', JSON.stringify(clickInfo));
 
-      if (!nextResult[0]?.result) {
+      if (!clickInfo?.clicked) {
         sendProgress('Sonraki sayfa butonu bulunamadi, durduruluyor');
         break;
       }
 
+      sendProgress(`Sayfa ${currentPage + 1} yukleniyor... (${clickInfo.method})`);
       currentPage++;
 
-      // Wait for ASP.NET postback navigation (loading -> complete)
-      await waitForNavigation(tab.id);
+      // Wait for page content to actually change (not just tab loading status)
+      // ASP.NET postbacks can complete too fast for tab status polling
+      const changed = await waitForPageContentChange(tab.id, currentPage, pageData.rows?.[0]?.uyeId);
+
+      if (!changed) {
+        sendProgress(`Sayfa ${currentPage} yuklenemedi - sayfa icerigi degismedi. Durduruluyor.`);
+        console.error('[SonaxSync] Page content did not change after clicking next. Stopping.');
+        break;
+      }
     }
 
     console.log('[SonaxSync] Scraping complete. Total rows:', allRows.length);
@@ -252,11 +379,13 @@ async function handleSyncCarts(port) {
 function scrapeCartReportPage() {
   // Parse pagination info: "Toplam X sayfanin Y sayfasindasiniz. Toplam Z kayit bulunmaktadir."
   const bodyText = document.body.innerText || '';
+  // Pattern: "Toplam 8 sayfanın 1 sayfasındasınız. Toplam 708 kayıt bulunmaktadır."
   const totalMatch = bodyText.match(
-    /Toplam\s+(\d+)\s+sayfa.*?Toplam\s+(\d+)\s+kay/
+    /Toplam\s+(\d+)\s+sayfa\S*\s+(\d+)\s+sayfa.*?Toplam\s+(\d+)\s+kay/
   );
   const totalPages = totalMatch ? parseInt(totalMatch[1]) : 1;
-  const totalRecords = totalMatch ? parseInt(totalMatch[2]) : 0;
+  const currentPageNum = totalMatch ? parseInt(totalMatch[2]) : 1;
+  const totalRecords = totalMatch ? parseInt(totalMatch[3]) : 0;
 
   // Find the data table by looking for header text
   const tables = document.querySelectorAll('table');
@@ -348,7 +477,7 @@ function scrapeCartReportPage() {
     });
   }
 
-  return { rows, totalPages, totalRecords };
+  return { rows, totalPages, totalRecords, currentPageNum };
 }
 
 // --- Utility functions ---
@@ -382,8 +511,136 @@ async function waitForTabComplete(tabId, timeoutMs = 60000) {
 }
 
 /**
- * Wait for a navigation to complete after clicking a button (e.g. ASP.NET postback).
- * Handles race condition: page is "complete" -> clicks button -> "loading" -> "complete"
+ * Wait for page content to actually change after clicking next/prev button.
+ * Instead of relying on tab loading status (which can miss fast ASP.NET postbacks),
+ * we check the actual page content by looking at the pagination text and first row.
+ * Uses polling to keep service worker alive.
+ */
+async function waitForPageContentChange(tabId, expectedPage, oldFirstUyeId, timeoutMs = 30000) {
+  const startTime = Date.now();
+  console.log('[SonaxSync] waitForPageContentChange: expecting page', expectedPage, ', old first uyeId:', oldFirstUyeId);
+
+  // First, give the postback a moment to start
+  await sleep(500);
+
+  while (Date.now() - startTime < timeoutMs) {
+    // First, wait for tab to be in "complete" state
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status !== 'complete') {
+        console.log('[SonaxSync] Tab still loading...');
+        await sleep(300);
+        continue;
+      }
+    } catch (e) {
+      console.warn('[SonaxSync] Tab get error during content check:', e.message);
+      return false;
+    }
+
+    // Check the actual page content
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => {
+          // Get current page number from pagination text
+          const bodyText = document.body.innerText || '';
+
+          // Try multiple regex patterns for Turkish pagination text
+          let currentPage = -1;
+
+          // Pattern 1: "Toplam X sayfanın Y sayfasındasınız"
+          const m1 = bodyText.match(/Toplam\s+\d+\s+sayfa\S*\s+(\d+)\s+sayfa/);
+          if (m1) currentPage = parseInt(m1[1]);
+
+          // Pattern 2: "X. sayfadasınız" or "X. sayfa"
+          if (currentPage === -1) {
+            const m2 = bodyText.match(/(\d+)\.\s*sayfa/);
+            if (m2) currentPage = parseInt(m2[1]);
+          }
+
+          // Pattern 3: Look for active/selected page number in pager
+          if (currentPage === -1) {
+            const pagerSpan = document.querySelector('span[disabled]');
+            if (pagerSpan) {
+              const num = parseInt(pagerSpan.textContent.trim());
+              if (num > 0) currentPage = num;
+            }
+          }
+
+          // Get first data row's uyeId as fingerprint
+          let firstUyeId = -1;
+          // Try by ASP.NET ID first
+          let dataTable = document.getElementById('cphPageContent_gvSepetRapor') ||
+                          document.querySelector('[id*="gvSepet"]');
+
+          if (!dataTable) {
+            const tables = document.querySelectorAll('table');
+            for (const table of tables) {
+              const firstRow = table.querySelector('tr');
+              if (!firstRow) continue;
+              const headerText = firstRow.innerText || '';
+              if (headerText.includes('Üye ID') || headerText.includes('UyeID') ||
+                  headerText.includes('Üye Adı') || headerText.includes('Uye ID')) {
+                dataTable = table;
+                break;
+              }
+            }
+          }
+
+          if (dataTable) {
+            const dataRows = dataTable.querySelectorAll('tr');
+            if (dataRows.length > 1) {
+              const cells = dataRows[1].querySelectorAll('td');
+              if (cells.length > 0) {
+                firstUyeId = parseInt(cells[0].textContent.trim()) || -1;
+              }
+            }
+          }
+
+          // Also capture pagination text for debugging
+          const paginationText = bodyText.match(/Toplam.+?kayit.+?bulun\S*/i)?.[0] ||
+                                 bodyText.match(/Toplam.+?sayfa\S*/)?.[0] || '';
+
+          return { currentPage, firstUyeId, paginationText: paginationText.substring(0, 200) };
+        },
+      });
+
+      const pageInfo = result[0]?.result;
+      if (pageInfo) {
+        console.log('[SonaxSync] Content check: page', pageInfo.currentPage,
+                     ', first uyeId:', pageInfo.firstUyeId,
+                     ', paginationText:', pageInfo.paginationText);
+
+        // Content has changed if either:
+        // 1. Page number matches expected page, OR
+        // 2. First row's uyeId is different from the old one
+        const pageChanged = pageInfo.currentPage === expectedPage;
+        const contentChanged = oldFirstUyeId != null && pageInfo.firstUyeId !== oldFirstUyeId && pageInfo.firstUyeId > 0;
+
+        if (pageChanged || contentChanged) {
+          console.log('[SonaxSync] Page content changed! Page:', pageInfo.currentPage,
+                       'pageChanged:', pageChanged, 'contentChanged:', contentChanged,
+                       'after', Date.now() - startTime, 'ms');
+          await sleep(500); // Small buffer for DOM to settle
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('[SonaxSync] Content check script error:', e.message);
+      // Page might be mid-navigation, keep polling
+    }
+
+    await sleep(400); // Poll every 400ms
+  }
+
+  console.error('[SonaxSync] waitForPageContentChange TIMEOUT after', timeoutMs, 'ms. Expected page:', expectedPage, 'Old uyeId:', oldFirstUyeId);
+  return false;
+}
+
+/**
+ * Wait for a navigation to complete after a postback (e.g. page size change).
+ * Uses tab status polling + content readiness check.
  * Uses polling to keep service worker alive.
  */
 async function waitForNavigation(tabId, timeoutMs = 60000) {
@@ -406,27 +663,27 @@ async function waitForNavigation(tabId, timeoutMs = 60000) {
     await sleep(200);
   }
 
-  if (!sawLoading) {
-    console.warn('[SonaxSync] Navigation did not start within 5s, continuing anyway');
-    await sleep(1000);
-    return;
-  }
-
   // Phase 2: Wait for page to FINISH loading
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.status === 'complete') {
-        console.log('[SonaxSync] Navigation complete after', Date.now() - startTime, 'ms');
-        await sleep(800);
+  if (sawLoading) {
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.status === 'complete') {
+          console.log('[SonaxSync] Navigation complete after', Date.now() - startTime, 'ms');
+          await sleep(800);
+          return;
+        }
+      } catch (e) {
         return;
       }
-    } catch (e) {
-      return;
+      await sleep(500);
     }
-    await sleep(500);
+  } else {
+    // Postback might have completed too fast - just wait a bit for DOM to settle
+    console.warn('[SonaxSync] Navigation did not start within 5s, waiting for DOM settle');
+    await sleep(2000);
   }
-  console.warn('[SonaxSync] waitForNavigation timeout');
+  console.warn('[SonaxSync] waitForNavigation done');
 }
 
 /**
