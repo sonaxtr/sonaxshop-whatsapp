@@ -35,7 +35,7 @@ export class TicimaxSoapClient {
           'Content-Type': 'text/xml; charset=utf-8',
           SOAPAction: soapAction,
         },
-        timeout: 60000, // 60s for large member queries
+        timeout: 30000, // 30s — bulk member query needs ~15-20s
       });
 
       return response.data;

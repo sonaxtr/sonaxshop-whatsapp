@@ -415,17 +415,15 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
       logger.info(`Individual lookups found ${phonesFound} additional phones`);
     }
 
-    // Return ALL members (with and without phones)
-    const allMembers = [...memberMap.values()];
-    const withPhoneCount = allMembers.filter(m => m.phone).length;
+    // Only return members WITH phone numbers (user wants phone + SMS info only)
+    const membersWithPhone = [...memberMap.values()].filter(m => m.phone);
 
-    logger.info(`Member sync complete: ${memberMap.size} total, ${withPhoneCount} with phones, ${memberMap.size - withPhoneCount} without`);
+    logger.info(`Member sync complete: ${memberMap.size} total, ${membersWithPhone.length} with phones`);
 
     res.json({
-      members: allMembers,
-      totalRecords: allMembers.length,
-      withPhone: withPhoneCount,
-      withoutPhone: memberMap.size - withPhoneCount,
+      members: membersWithPhone,
+      totalRecords: membersWithPhone.length,
+      totalInSystem: memberMap.size,
       source: 'soap-api',
     });
   } catch (error: any) {
