@@ -325,6 +325,47 @@ webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) 
 });
 
 // ============================
+// LIVE CHAT — Dashboard notifies chatbot when agent closes conversation
+// ============================
+
+import { whatsappApi } from '../whatsapp/api';
+
+/**
+ * POST /api/live-chat/close — Dashboard agent closed conversation
+ * Notifies the customer and resets chatbot session
+ */
+webhookRoutes.post('/api/live-chat/close', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.DASHBOARD_API_SECRET || '';
+  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      res.status(400).json({ error: 'phone required' });
+      return;
+    }
+
+    // Reset chatbot session
+    await chatbotRouter.endLiveAgent(phone);
+
+    // Send closing message to customer
+    await whatsappApi.sendText(phone,
+      'Gorusmeniz sonlandirildi. Tekrar yardim almak icin "merhaba" yazabilirsiniz. 😊'
+    );
+
+    logger.info('Live chat closed by agent', { phone });
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error('Live chat close error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================
 // MEMBER SYNC — Cache-based multi-page SOAP + individual phone lookups
 // ============================
 

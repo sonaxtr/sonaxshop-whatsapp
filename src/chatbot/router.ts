@@ -9,6 +9,7 @@ import { handleUrunAction } from './handlers/urun';
 import { handleKampanyaAction } from './handlers/kampanya';
 import { handleMagazaAction } from './handlers/magaza';
 import { handleKategoriAction } from './handlers/kategori';
+import { createConversation, forwardMessage, getConversationStatus, closeConversation } from './live-agent';
 
 /**
  * Chatbot message router — State machine that manages menu navigation
@@ -35,6 +36,10 @@ class ChatbotRouter {
 
     // Check for global commands
     if (this.isResetCommand(input)) {
+      // If in live_agent mode, notify dashboard
+      if (session?.currentMenu === 'live_agent' && session?.data?.conversationId) {
+        closeConversation(session.data.conversationId).catch(() => {});
+      }
       // Preserve member data (uyeId, isim, soyisim, mail) across resets
       const memberData = {
         uyeId: session?.data?.uyeId,
@@ -157,8 +162,14 @@ class ChatbotRouter {
       return;
     }
     if (input === 'menu_temsilci') {
-      await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);
-      await this.showBackButtons(from);
+      // Determine department from current menu context
+      const sess = getSession(from);
+      const magazaStates = ['magaza_menu', 'magaza_sorgula_input', 'magaza_konum_bekle', 'magaza_secim'];
+      let dept = 'online';
+      if (sess && magazaStates.includes(sess.currentMenu)) {
+        dept = 'uygulama';
+      }
+      await this.startLiveAgent(from, name, dept);
       return;
     }
     if (input === 'menu_ust') {
@@ -168,6 +179,12 @@ class ChatbotRouter {
       } else {
         await this.showOnlineMenu(from);
       }
+      return;
+    }
+
+    // Live agent mode — forward all messages to dashboard
+    if (currentMenu === 'live_agent') {
+      await this.handleLiveAgentMessage(from, name, input, message);
       return;
     }
 
@@ -338,8 +355,7 @@ class ChatbotRouter {
         await this.showBackButtons(from);
         break;
       case 'menu_diger':
-        await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);
-        await this.showBackButtons(from);
+        await this.startLiveAgent(from, '', 'online');
         break;
       default:
         await this.showOnlineMenu(from);
@@ -547,12 +563,146 @@ class ChatbotRouter {
         await this.showBackButtons(from);
         break;
       case 'magaza_temsilci':
-        await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);
-        await this.showBackButtons(from);
+        await this.startLiveAgent(from, '', 'uygulama');
         break;
       default:
         await this.showMagazaMenu(from);
         break;
+    }
+  }
+
+  // ============================
+  // LIVE AGENT
+  // ============================
+
+  /**
+   * Start live agent mode: create conversation in dashboard
+   */
+  private async startLiveAgent(from: string, name: string, department: string): Promise<void> {
+    try {
+      const session = getSession(from);
+
+      // Already in a conversation?
+      if (session?.data?.conversationId) {
+        await whatsappApi.sendText(from,
+          'Temsilci baglantiniz zaten aktif. Mesajinizi yazabilirsiniz. 💬'
+        );
+        updateSession(from, { currentMenu: 'live_agent' });
+        return;
+      }
+
+      const customerName = session?.data?.isim
+        ? `${session.data.isim} ${session.data.soyisim || ''}`.trim()
+        : (name || 'Musteri');
+
+      const result = await createConversation(from, customerName, department);
+
+      updateSession(from, {
+        currentMenu: 'live_agent',
+        data: {
+          ...(session?.data || {}),
+          conversationId: result.conversationId,
+          department,
+        },
+      });
+
+      const deptLabel = department === 'uygulama' ? 'Uygulama Merkezleri' :
+                        department === 'genel' ? 'Genel Destek' : 'Online Destek';
+
+      await whatsappApi.sendText(from,
+        `👤 *Temsilciye Baglaniyorsunuz*\n\n` +
+        `Birim: ${deptLabel}\n\n` +
+        `Bir temsilci en kisa surede size donecektir. ` +
+        `Lutfen mesajinizi yazin, temsilcimiz gorecektir.\n\n` +
+        `_Ana menuye donmek icin "merhaba" yazabilirsiniz._`
+      );
+
+      logger.info('Live agent started', { from, department, conversationId: result.conversationId });
+    } catch (error: any) {
+      logger.error('Failed to start live agent', { from, department, error: error.message });
+      // Fallback to static text
+      await whatsappApi.sendText(from, menus.TEMSILCI_TEXT);
+      await this.showBackButtons(from);
+    }
+  }
+
+  /**
+   * Handle messages while in live_agent mode — forward to dashboard
+   */
+  private async handleLiveAgentMessage(from: string, name: string, input: string, message: WebhookMessage): Promise<void> {
+    const session = getSession(from);
+    const conversationId = session?.data?.conversationId;
+
+    if (!conversationId) {
+      // Lost conversation reference — reset
+      updateSession(from, { currentMenu: 'welcome' });
+      await this.showWelcome(from);
+      return;
+    }
+
+    // Check if agent has closed the conversation
+    try {
+      const statusResult = await getConversationStatus(conversationId);
+      if (statusResult.status === 'closed') {
+        const memberData = {
+          uyeId: session?.data?.uyeId,
+          isim: session?.data?.isim,
+          soyisim: session?.data?.soyisim,
+          mail: session?.data?.mail,
+        };
+        updateSession(from, { currentMenu: 'welcome', data: memberData });
+        await whatsappApi.sendText(from, 'Gorusme sonlandirildi. Tekrar yardimci olabilir miyim? 😊');
+        await this.showWelcome(from);
+        return;
+      }
+    } catch {
+      // Status check failed — continue forwarding
+    }
+
+    // Extract content
+    let content = '';
+    let messageType = 'text';
+
+    if (message.type === 'text') {
+      content = message.text?.body || input;
+    } else if (message.type === 'interactive') {
+      content = message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || input;
+    } else if (message.type === 'image') {
+      content = '[Gorsel gonderildi]';
+      messageType = 'image';
+    } else if (message.type === 'document') {
+      content = '[Belge gonderildi]';
+      messageType = 'document';
+    } else if (message.type === 'location') {
+      content = `[Konum: ${message.location?.latitude}, ${message.location?.longitude}]`;
+    } else {
+      content = input || '[Mesaj]';
+    }
+
+    // Forward to dashboard
+    try {
+      const customerName = session?.data?.isim
+        ? `${session.data.isim} ${session.data.soyisim || ''}`.trim()
+        : (name || 'Musteri');
+      await forwardMessage(conversationId, content, customerName, messageType);
+    } catch (error: any) {
+      logger.error('Failed to forward message', { from, conversationId, error: error.message });
+    }
+  }
+
+  /**
+   * Called when dashboard closes the conversation
+   */
+  async endLiveAgent(from: string): Promise<void> {
+    const session = getSession(from);
+    if (session) {
+      const memberData = {
+        uyeId: session.data?.uyeId,
+        isim: session.data?.isim,
+        soyisim: session.data?.soyisim,
+        mail: session.data?.mail,
+      };
+      updateSession(from, { currentMenu: 'welcome', data: memberData });
     }
   }
 
