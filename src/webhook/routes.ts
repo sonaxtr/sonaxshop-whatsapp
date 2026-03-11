@@ -375,7 +375,7 @@ async function doFullMemberSync(): Promise<void> {
 
     const memberMap = new Map<number, MemberCacheEntry>();
     let pageNo = 1;
-    const PAGE_SIZE = 10000;
+    const PAGE_SIZE = 2000;
 
     // Step 1: Multi-page SOAP fetch (SmsIzin=1 — only SMS-permitted members)
     while (true) {
@@ -404,9 +404,11 @@ async function doFullMemberSync(): Promise<void> {
         });
       }
 
+      logger.info(`Cumulative unique members after page ${pageNo}: ${memberMap.size}`);
+
       if (members.length < PAGE_SIZE) break; // Last page
       pageNo++;
-      if (pageNo > 5) break; // Safety: max 50K members
+      if (pageNo > 15) break; // Safety: max 30K members
     }
 
     const withPhoneCount = [...memberMap.values()].filter(m => m.phone).length;
@@ -546,7 +548,7 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    const xml = await soapClient.selectAllUyeler(1, 10000, 1); // SmsIzin=1
+    const xml = await soapClient.selectAllUyeler(1, 2000, 1); // SmsIzin=1, first page for quick response
     const members = await xmlParser.parseUyeler(xml);
 
     const quickMembers: MemberCacheEntry[] = [];
@@ -651,8 +653,16 @@ webhookRoutes.get('/api/members/status', (req: Request, res: Response) => {
 function normalizePhoneForMembers(phone: string): string {
   if (!phone) return '';
   let cleaned = phone.replace(/\D/g, '');
-  if (cleaned.startsWith('05')) cleaned = '9' + cleaned;
-  if (cleaned.startsWith('5') && cleaned.length === 10) cleaned = '90' + cleaned;
-  if (cleaned.length < 10) return '';
+
+  // Handle various Turkish formats
+  if (cleaned.startsWith('00905')) {
+    cleaned = cleaned.substring(2); // 00905... -> 905...
+  } else if (cleaned.startsWith('05') && cleaned.length === 11) {
+    cleaned = '9' + cleaned; // 05XXXXXXXXX -> 905XXXXXXXXX
+  } else if (cleaned.startsWith('5') && cleaned.length === 10) {
+    cleaned = '90' + cleaned; // 5XXXXXXXXX -> 905XXXXXXXXX
+  }
+
+  if (cleaned.length < 7) return ''; // Truly invalid
   return cleaned;
 }
