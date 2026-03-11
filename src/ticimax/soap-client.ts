@@ -35,7 +35,7 @@ export class TicimaxSoapClient {
           'Content-Type': 'text/xml; charset=utf-8',
           SOAPAction: soapAction,
         },
-        timeout: 30000, // 30s — bulk member query needs ~15-20s
+        timeout: 60000, // 60s — bulk member query needs ~15-20s, allow headroom for large pages
       });
 
       return response.data;
@@ -231,7 +231,7 @@ export class TicimaxSoapClient {
    * Fetch ALL active members with pagination
    * Returns raw XML for each page
    */
-  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100): Promise<string> {
+  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100, smsIzin: number = -1): Promise<string> {
     const body = `<tem:SelectUyeler>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:filtre>
@@ -239,7 +239,7 @@ export class TicimaxSoapClient {
         <ns:AlisverisYapti>-1</ns:AlisverisYapti>
         <ns:Cinsiyet>-1</ns:Cinsiyet>
         <ns:MailIzin>-1</ns:MailIzin>
-        <ns:SmsIzin>-1</ns:SmsIzin>
+        <ns:SmsIzin>${smsIzin}</ns:SmsIzin>
         <ns:Telefon></ns:Telefon>
         <ns:UyeID>-1</ns:UyeID>
       </tem:filtre>

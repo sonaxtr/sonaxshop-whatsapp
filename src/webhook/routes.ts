@@ -324,14 +324,183 @@ webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) 
   });
 });
 
+// ============================
+// MEMBER SYNC — Cache-based multi-page SOAP + individual phone lookups
+// ============================
+
+interface MemberCacheEntry {
+  uyeId: number;
+  name: string;
+  email: string;
+  phone: string;
+  smsPermit: boolean;
+  mailPermit: boolean;
+  city: string;
+}
+
+interface MemberCacheData {
+  members: MemberCacheEntry[];
+  totalInSystem: number;
+  syncedAt: Date;
+  pagesScanned: number;
+  individualLookups: number;
+  phonesFoundViaLookup: number;
+}
+
+let memberCache: MemberCacheData | null = null;
+let memberSyncInProgress = false;
+const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
+
 /**
- * POST /api/members — Fetch ALL active Ticimax members via SOAP API
- * Used by campaign dashboard to sync contacts (not just cart report)
+ * Background full member sync — runs on Render with no timeout limit
  *
  * Strategy:
- * 1. Bulk SelectUyeler (KayitSayisi=10000) — gets all member records
- * 2. For members without phone, individual selectUyelerById lookups
- *    (individual lookups often return phone data that bulk doesn't)
+ * 1. Multi-page SOAP fetch with SmsIzin=1 (only SMS-permitted members)
+ * 2. Individual selectUyelerById lookups for members without phone data
+ *    (bulk query often omits CepTelefonu, but individual lookup returns it)
+ * 3. Store results in in-memory cache for fast dashboard access
+ */
+async function doFullMemberSync(): Promise<void> {
+  if (memberSyncInProgress) {
+    logger.info('Full member sync already in progress, skipping');
+    return;
+  }
+  memberSyncInProgress = true;
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+    const { xmlParser } = await import('../ticimax/xml-parser');
+
+    logger.info('=== Starting FULL member sync (background) ===');
+
+    const memberMap = new Map<number, MemberCacheEntry>();
+    let pageNo = 1;
+    const PAGE_SIZE = 10000;
+
+    // Step 1: Multi-page SOAP fetch (SmsIzin=1 — only SMS-permitted members)
+    while (true) {
+      logger.info(`Fetching SOAP page ${pageNo} (SmsIzin=1, KayitSayisi=${PAGE_SIZE})...`);
+
+      const xml = await soapClient.selectAllUyeler(pageNo, PAGE_SIZE, 1);
+      const members = await xmlParser.parseUyeler(xml);
+
+      logger.info(`Page ${pageNo}: ${members.length} members returned`);
+
+      if (members.length === 0) break;
+
+      for (const m of members) {
+        if (memberMap.has(m.id)) continue;
+        const rawPhone = m.cepTelefonu || m.telefon || '';
+        const phone = normalizePhoneForMembers(rawPhone);
+
+        memberMap.set(m.id, {
+          uyeId: m.id,
+          name: `${m.isim} ${m.soyisim}`.trim(),
+          email: m.mail || '',
+          phone: phone || '',
+          smsPermit: m.smsIzin,
+          mailPermit: m.mailIzin,
+          city: m.il || '',
+        });
+      }
+
+      if (members.length < PAGE_SIZE) break; // Last page
+      pageNo++;
+      if (pageNo > 5) break; // Safety: max 50K members
+    }
+
+    const withPhoneCount = [...memberMap.values()].filter(m => m.phone).length;
+    const withoutPhone = [...memberMap.values()].filter(m => !m.phone);
+
+    logger.info(`After ${pageNo} page(s): ${memberMap.size} unique members, ${withPhoneCount} with phone, ${withoutPhone.length} without`);
+
+    // Step 2: Individual phone lookups for ALL members without phones
+    // No limit! The bulk query often omits CepTelefonu, but selectUyelerById returns it
+    let phonesFoundViaLookup = 0;
+
+    if (withoutPhone.length > 0) {
+      logger.info(`Starting individual phone lookups for ${withoutPhone.length} members (concurrency: 20)`);
+
+      const CONCURRENCY = 20;
+      const startTime = Date.now();
+      const MAX_LOOKUP_TIME = 10 * 60 * 1000; // 10 minutes max
+      let lookupsDone = 0;
+
+      for (let i = 0; i < withoutPhone.length; i += CONCURRENCY) {
+        // Time limit check
+        if (Date.now() - startTime > MAX_LOOKUP_TIME) {
+          logger.warn(`Individual lookups time limit reached (${MAX_LOOKUP_TIME / 1000}s). Done ${lookupsDone}/${withoutPhone.length}`);
+          break;
+        }
+
+        const batch = withoutPhone.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async (member) => {
+          try {
+            const memberXml = await soapClient.selectUyelerById(member.uyeId);
+            const cepMatch = memberXml.match(/<a:CepTelefonu>([^<]*)<\//);
+            const telMatch = memberXml.match(/<a:Telefon>([^<]*)<\//);
+            const rawPhone = (cepMatch ? cepMatch[1] : '') || (telMatch ? telMatch[1] : '');
+            const phone = normalizePhoneForMembers(rawPhone);
+
+            if (phone) {
+              member.phone = phone;
+              memberMap.set(member.uyeId, member);
+              phonesFoundViaLookup++;
+            }
+
+            // Also update SmsIzin/MailIzin from individual lookup
+            const smsMatch = memberXml.match(/<a:SmsIzin>([^<]*)<\//);
+            const mailMatch = memberXml.match(/<a:MailIzin>([^<]*)<\//);
+            if (smsMatch) member.smsPermit = smsMatch[1] === 'true';
+            if (mailMatch) member.mailPermit = mailMatch[1] === 'true';
+          } catch {
+            // Skip failed lookups silently
+          }
+        }));
+
+        lookupsDone += batch.length;
+
+        // Log progress every 500 members
+        if (lookupsDone % 500 < CONCURRENCY || lookupsDone >= withoutPhone.length) {
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          logger.info(`Individual lookups: ${lookupsDone}/${withoutPhone.length} done, ${phonesFoundViaLookup} phones found (${elapsed}s elapsed)`);
+        }
+      }
+
+      const totalElapsed = Math.round((Date.now() - startTime) / 1000);
+      logger.info(`Individual lookups complete: ${phonesFoundViaLookup} additional phones found in ${totalElapsed}s`);
+    }
+
+    // Only keep members WITH phone numbers
+    const membersWithPhone = [...memberMap.values()].filter(m => m.phone);
+
+    // Update cache
+    memberCache = {
+      members: membersWithPhone,
+      totalInSystem: memberMap.size,
+      syncedAt: new Date(),
+      pagesScanned: pageNo,
+      individualLookups: withoutPhone.length,
+      phonesFoundViaLookup,
+    };
+
+    logger.info(`=== Full member sync COMPLETE: ${membersWithPhone.length} members with phones (${memberMap.size} total in system) ===`);
+
+  } catch (error: any) {
+    logger.error('Full member sync error', { error: error.message, stack: error.stack });
+  } finally {
+    memberSyncInProgress = false;
+  }
+}
+
+/**
+ * POST /api/members — Fetch ALL active Ticimax members via SOAP API
+ * Used by campaign dashboard to sync contacts
+ *
+ * Strategy:
+ * - Returns cached data if available (fast response for Vercel 60s limit)
+ * - Triggers background full sync if cache is stale/missing
+ * - First call without cache does a quick page-1 bulk fetch
  */
 webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -342,94 +511,138 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
   }
 
   try {
+    // Case 1: Fresh cache available → return immediately
+    if (memberCache && (Date.now() - memberCache.syncedAt.getTime()) < CACHE_TTL) {
+      logger.info(`Returning cached member data (${memberCache.members.length} members, cached ${Math.round((Date.now() - memberCache.syncedAt.getTime()) / 60000)}min ago)`);
+      return res.json({
+        members: memberCache.members,
+        totalRecords: memberCache.members.length,
+        totalInSystem: memberCache.totalInSystem,
+        pagesScanned: memberCache.pagesScanned,
+        individualLookups: memberCache.individualLookups,
+        phonesFoundViaLookup: memberCache.phonesFoundViaLookup,
+        source: 'cache',
+        cachedAt: memberCache.syncedAt.toISOString(),
+      });
+    }
+
+    // Case 2: Stale cache → return stale data + trigger background refresh
+    if (memberCache) {
+      logger.info(`Returning stale cache (${memberCache.members.length} members), triggering background refresh`);
+      doFullMemberSync(); // Fire and forget
+      return res.json({
+        members: memberCache.members,
+        totalRecords: memberCache.members.length,
+        totalInSystem: memberCache.totalInSystem,
+        source: 'stale-cache',
+        cachedAt: memberCache.syncedAt.toISOString(),
+        syncInProgress: true,
+      });
+    }
+
+    // Case 3: No cache at all → quick page-1 bulk fetch + trigger full sync
+    logger.info('No cache available, doing quick page-1 bulk fetch');
+
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    // Step 1: Bulk fetch with large page size to get ALL members at once
-    logger.info('Starting full member sync via SOAP API');
-
-    const xml = await soapClient.selectAllUyeler(1, 10000);
+    const xml = await soapClient.selectAllUyeler(1, 10000, 1); // SmsIzin=1
     const members = await xmlParser.parseUyeler(xml);
 
-    logger.info(`Bulk SelectUyeler returned ${members.length} members`);
+    const quickMembers: MemberCacheEntry[] = [];
+    const seen = new Set<number>();
 
-    // Deduplicate by ID
-    const memberMap = new Map<number, any>();
     for (const m of members) {
-      if (memberMap.has(m.id)) continue;
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
       const rawPhone = m.cepTelefonu || m.telefon || '';
       const phone = normalizePhoneForMembers(rawPhone);
+      if (!phone) continue; // Skip phoneless in quick mode
 
-      memberMap.set(m.id, {
+      quickMembers.push({
         uyeId: m.id,
         name: `${m.isim} ${m.soyisim}`.trim(),
         email: m.mail || '',
-        phone: phone || '',
+        phone,
         smsPermit: m.smsIzin,
         mailPermit: m.mailIzin,
         city: m.il || '',
       });
     }
 
-    const withPhone = [...memberMap.values()].filter(m => m.phone).length;
-    const withoutPhone = [...memberMap.values()].filter(m => !m.phone);
+    logger.info(`Quick page-1 fetch: ${members.length} total, ${quickMembers.length} with phones`);
 
-    logger.info(`Bulk query: ${memberMap.size} unique, ${withPhone} with phone, ${withoutPhone.length} without`);
-
-    // Step 2: Individual phone lookups for members without phones
-    // (selectUyelerById often returns phone data that bulk query doesn't)
-    if (withoutPhone.length > 0 && withoutPhone.length <= 200) {
-      logger.info(`Looking up phones for ${withoutPhone.length} members individually`);
-
-      const BATCH = 5;
-      let phonesFound = 0;
-
-      for (let i = 0; i < withoutPhone.length; i += BATCH) {
-        const batch = withoutPhone.slice(i, i + BATCH);
-        await Promise.all(batch.map(async (member) => {
-          try {
-            const memberXml = await soapClient.selectUyelerById(member.uyeId);
-            // Extract phone from individual lookup XML
-            const cepMatch = memberXml.match(/<a:CepTelefonu>([^<]*)</);
-            const telMatch = memberXml.match(/<a:Telefon>([^<]*)</);
-            const rawPhone = (cepMatch ? cepMatch[1] : '') || (telMatch ? telMatch[1] : '');
-            const phone = normalizePhoneForMembers(rawPhone);
-
-            if (phone) {
-              member.phone = phone;
-              memberMap.set(member.uyeId, member);
-              phonesFound++;
-            }
-
-            // Also extract SmsIzin/MailIzin from individual lookup
-            const smsMatch = memberXml.match(/<a:SmsIzin>([^<]*)</);
-            const mailMatch = memberXml.match(/<a:MailIzin>([^<]*)</);
-            if (smsMatch) member.smsPermit = smsMatch[1] === 'true';
-            if (mailMatch) member.mailPermit = mailMatch[1] === 'true';
-          } catch {
-            // Skip failed lookups silently
-          }
-        }));
-      }
-
-      logger.info(`Individual lookups found ${phonesFound} additional phones`);
-    }
-
-    // Only return members WITH phone numbers (user wants phone + SMS info only)
-    const membersWithPhone = [...memberMap.values()].filter(m => m.phone);
-
-    logger.info(`Member sync complete: ${memberMap.size} total, ${membersWithPhone.length} with phones`);
+    // Trigger full sync in background
+    doFullMemberSync();
 
     res.json({
-      members: membersWithPhone,
-      totalRecords: membersWithPhone.length,
-      totalInSystem: memberMap.size,
-      source: 'soap-api',
+      members: quickMembers,
+      totalRecords: quickMembers.length,
+      totalInSystem: members.length,
+      source: 'quick-bulk',
+      syncInProgress: true,
+      message: 'Arka planda tam senkronizasyon başlatıldı. 2-5 dakika sonra tekrar senkronize edin.',
     });
   } catch (error: any) {
     logger.error('Members API error', { error: error.message });
     res.status(500).json({ error: error.message });
   }
+});
+
+/**
+ * POST /api/members/force-sync — Force a fresh full member sync
+ * Waits for sync to complete (may take several minutes)
+ */
+webhookRoutes.post('/api/members/force-sync', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    // Clear cache to force fresh sync
+    memberCache = null;
+    await doFullMemberSync();
+
+    // Re-read cache (doFullMemberSync updates it)
+    const cache = memberCache as MemberCacheData | null;
+    if (cache) {
+      res.json({
+        members: cache.members,
+        totalRecords: cache.members.length,
+        totalInSystem: cache.totalInSystem,
+        pagesScanned: cache.pagesScanned,
+        individualLookups: cache.individualLookups,
+        phonesFoundViaLookup: cache.phonesFoundViaLookup,
+        source: 'fresh-sync',
+        cachedAt: cache.syncedAt.toISOString(),
+      });
+    } else {
+      res.status(500).json({ error: 'Sync failed — check logs' });
+    }
+  } catch (error: any) {
+    logger.error('Force sync error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/members/status — Check member cache status
+ */
+webhookRoutes.get('/api/members/status', (req: Request, res: Response) => {
+  res.json({
+    hasCachedData: !!memberCache,
+    memberCount: memberCache?.members.length || 0,
+    totalInSystem: memberCache?.totalInSystem || 0,
+    syncedAt: memberCache?.syncedAt?.toISOString() || null,
+    pagesScanned: memberCache?.pagesScanned || 0,
+    individualLookups: memberCache?.individualLookups || 0,
+    phonesFoundViaLookup: memberCache?.phonesFoundViaLookup || 0,
+    syncInProgress: memberSyncInProgress,
+    cacheAgeMins: memberCache ? Math.round((Date.now() - memberCache.syncedAt.getTime()) / 60000) : null,
+  });
 });
 
 /**
