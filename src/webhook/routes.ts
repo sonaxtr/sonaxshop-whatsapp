@@ -375,7 +375,7 @@ async function doFullMemberSync(): Promise<void> {
 
     const memberMap = new Map<number, MemberCacheEntry>();
     let pageNo = 1;
-    const PAGE_SIZE = 2000;
+    const PAGE_SIZE = 20000; // KayitSayisi = total record limit (not page size)
 
     // Step 1: Multi-page SOAP fetch (SmsIzin=1 — only SMS-permitted members)
     while (true) {
@@ -548,7 +548,7 @@ webhookRoutes.post('/api/members', async (req: Request, res: Response) => {
     const { soapClient } = await import('../ticimax/soap-client');
     const { xmlParser } = await import('../ticimax/xml-parser');
 
-    const xml = await soapClient.selectAllUyeler(1, 2000, 1); // SmsIzin=1, first page for quick response
+    const xml = await soapClient.selectAllUyeler(1, 20000, 1); // SmsIzin=1, get all records
     const members = await xmlParser.parseUyeler(xml);
 
     const quickMembers: MemberCacheEntry[] = [];
