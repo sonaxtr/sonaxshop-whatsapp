@@ -180,8 +180,8 @@ class ChatbotRouter {
 
     // Report to dashboard for conversion tracking
     try {
-      const dashboardUrl = process.env.DASHBOARD_URL || process.env.CHATBOT_DASHBOARD_URL || '';
-      const dashboardSecret = process.env.API_PROXY_SECRET || '';
+      const dashboardUrl = process.env.DASHBOARD_API_URL || '';
+      const dashboardSecret = process.env.DASHBOARD_API_SECRET || process.env.API_PROXY_SECRET || '';
 
       if (dashboardUrl && dashboardSecret) {
         await fetch(`${dashboardUrl}/api/track/catalog-order`, {
