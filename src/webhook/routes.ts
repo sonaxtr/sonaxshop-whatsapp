@@ -391,10 +391,11 @@ webhookRoutes.get('/api/cart-data-status', async (_req: Request, res: Response) 
 // ============================
 
 import { whatsappApi } from '../whatsapp/api';
+import { getSession, updateSession } from '../chatbot/session';
 
 /**
  * POST /api/live-chat/close — Dashboard agent closed conversation
- * Notifies the customer and resets chatbot session
+ * Notifies the customer, sends rating prompt, and updates chatbot session
  */
 webhookRoutes.post('/api/live-chat/close', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -405,21 +406,49 @@ webhookRoutes.post('/api/live-chat/close', async (req: Request, res: Response) =
   }
 
   try {
-    const { phone } = req.body;
+    const { phone, conversationId } = req.body;
     if (!phone) {
       res.status(400).json({ error: 'phone required' });
       return;
     }
 
-    // Reset chatbot session
+    // Reset chatbot session to rating mode (not welcome yet)
     await chatbotRouter.endLiveAgent(phone);
 
-    // Send closing message to customer
+    // Send closing message
     await whatsappApi.sendText(phone,
       'Görüşmeniz sonlandırıldı. Tekrar yardım almak için "menü" yazabilirsiniz. 😊'
     );
 
-    logger.info('Live chat closed by agent', { phone });
+    // Send rating prompt with 3 buttons
+    if (conversationId) {
+      try {
+        await whatsappApi.sendButtons(phone,
+          'Hizmetimizi puanlar mısınız? Geri bildiriminiz bizim için değerli.',
+          [
+            { type: 'reply', reply: { id: 'rating_bad', title: '😞 Kötü' } },
+            { type: 'reply', reply: { id: 'rating_ok', title: '😐 Orta' } },
+            { type: 'reply', reply: { id: 'rating_great', title: '😊 Mükemmel' } },
+          ],
+          '⭐ Puanlama'
+        );
+
+        // Set session to rating_pending so router handles the response
+        const session = getSession(phone);
+        updateSession(phone, {
+          currentMenu: 'rating_pending',
+          data: {
+            ...(session?.data || {}),
+            ratingConversationId: conversationId,
+          },
+        });
+      } catch (ratingErr: any) {
+        logger.error('Failed to send rating prompt', { phone, error: ratingErr.message });
+        // Don't fail the close if rating prompt fails
+      }
+    }
+
+    logger.info('Live chat closed by agent', { phone, conversationId });
     res.json({ success: true });
   } catch (error: any) {
     logger.error('Live chat close error', { error: error.message });

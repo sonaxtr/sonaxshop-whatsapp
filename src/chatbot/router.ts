@@ -10,6 +10,8 @@ import { handleMagazaAction } from './handlers/magaza';
 import { handleKategoriAction } from './handlers/kategori';
 import { createConversation, forwardMessage, getConversationStatus, closeConversation } from './live-agent';
 import { downloadAndUpload } from '../utils/media';
+import { productCache } from '../ticimax/product-cache';
+import { isWithinWorkingHours, getOfflineMessage } from './working-hours';
 
 /**
  * Chatbot message router — State machine that manages menu navigation
@@ -166,17 +168,20 @@ class ChatbotRouter {
       totalAmount,
     });
 
-    // Send confirmation to customer
-    const itemLines = items.map(item =>
-      `• ${item.product_retailer_id} x${item.quantity} — ${(item.item_price * item.quantity).toLocaleString('tr-TR')} TL`
-    ).join('\n');
+    // Send confirmation to customer — look up product names from cache
+    const itemLines: string[] = [];
+    for (const item of items) {
+      const results = await productCache.searchByCode(item.product_retailer_id, 1);
+      const name = results.length > 0 ? results[0].urunAdi : `SKU: ${item.product_retailer_id}`;
+      itemLines.push(`• ${name} x${item.quantity} — ${(item.item_price * item.quantity).toLocaleString('tr-TR')} TL`);
+    }
 
     await whatsappApi.sendText(from,
       `🛒 *Sepetiniz Alındı!*\n\n` +
-      `${itemLines}\n\n` +
+      `${itemLines.join('\n')}\n\n` +
       `💰 *Toplam: ${totalAmount.toLocaleString('tr-TR')} TL*\n\n` +
       `Siparişinizi tamamlamak için sitemizi ziyaret edin veya bir temsilcimiz size yardımcı olacaktır.\n\n` +
-      `_Ana menüye dönmek için "merhaba" yazabilirsiniz._`
+      `_Ana menüye dönmek için "menü" yazabilirsiniz._`
     );
 
     // Report to dashboard for conversion tracking
@@ -316,6 +321,10 @@ class ChatbotRouter {
 
       case 'kategori_urunler':
         await handleKategoriAction(from, input, 'kategori_urunler');
+        break;
+
+      case 'rating_pending':
+        await this.handleRating(from, input);
         break;
 
       default:
@@ -609,6 +618,32 @@ class ChatbotRouter {
         ? `${session.data.isim} ${session.data.soyisim || ''}`.trim()
         : (name || 'Musteri');
 
+      // Check working hours
+      const withinHours = isWithinWorkingHours(department);
+
+      // Check agent availability (presence)
+      let agentsOnline = false;
+      try {
+        const dashboardUrl = process.env.DASHBOARD_API_URL || '';
+        const dashboardSecret = process.env.DASHBOARD_API_SECRET || process.env.API_PROXY_SECRET || '';
+        if (dashboardUrl && dashboardSecret) {
+          const presenceRes = await fetch(`${dashboardUrl}/api/live-chat/presence`, {
+            headers: { 'Authorization': `Bearer ${dashboardSecret}` },
+          });
+          if (presenceRes.ok) {
+            const presenceData = await presenceRes.json() as {
+              departments?: Record<string, { id: string }[]>;
+            };
+            // Check if any agent in this department (or admin) is online
+            const depts = presenceData.departments || {};
+            agentsOnline = (depts[department]?.length > 0) || (depts['all']?.length > 0);
+          }
+        }
+      } catch (err: any) {
+        logger.warn('Presence check failed', { error: err.message });
+        agentsOnline = true; // Fail open — don't block customer if presence check fails
+      }
+
       const result = await createConversation(from, customerName, department);
 
       updateSession(from, {
@@ -623,13 +658,31 @@ class ChatbotRouter {
       const deptLabel = department === 'uygulama' ? 'Uygulama Merkezleri' :
                         department === 'genel' ? 'Genel Destek' : 'Online Destek';
 
-      await whatsappApi.sendText(from,
-        `👤 *Temsilciye Bağlanıyorsunuz*\n\n` +
-        `Birim: ${deptLabel}\n\n` +
-        `Bir temsilci en kısa sürede size dönecektir. ` +
-        `Lütfen mesajınızı yazın, temsilcimiz görecektir.\n\n` +
-        `_Ana menüye dönmek için "menu" yazabilirsiniz._`
-      );
+      if (!withinHours) {
+        // Outside working hours — still create conversation but inform customer
+        await whatsappApi.sendText(from,
+          `👤 *${deptLabel}*\n\n` +
+          getOfflineMessage(department) + `\n\n` +
+          `Mesajınızı bırakabilirsiniz, temsilcimiz görecektir.\n\n` +
+          `_Ana menüye dönmek için "menü" yazabilirsiniz._`
+        );
+      } else if (!agentsOnline) {
+        // Within hours but no agents online
+        await whatsappApi.sendText(from,
+          `👤 *${deptLabel}*\n\n` +
+          `Şu anda aktif temsilcimiz bulunmamaktadır.\n` +
+          `Mesajınızı bırakabilirsiniz, en kısa sürede dönüş yapılacaktır. 🙏\n\n` +
+          `_Ana menüye dönmek için "menü" yazabilirsiniz._`
+        );
+      } else {
+        await whatsappApi.sendText(from,
+          `👤 *Temsilciye Bağlanıyorsunuz*\n\n` +
+          `Birim: ${deptLabel}\n\n` +
+          `Bir temsilci en kısa sürede size dönecektir. ` +
+          `Lütfen mesajınızı yazın, temsilcimiz görecektir.\n\n` +
+          `_Ana menüye dönmek için "menü" yazabilirsiniz._`
+        );
+      }
 
       logger.info('Live agent started', { from, department, conversationId: result.conversationId });
     } catch (error: any) {
@@ -729,6 +782,78 @@ class ChatbotRouter {
       };
       updateSession(from, { currentMenu: 'welcome', data: memberData });
     }
+  }
+
+  // ============================
+  // RATING
+  // ============================
+
+  private async handleRating(from: string, input: string): Promise<void> {
+    const session = getSession(from);
+    const conversationId = session?.data?.ratingConversationId;
+
+    // Map button IDs to ratings
+    const ratingMap: Record<string, number> = {
+      rating_bad: 2,
+      rating_ok: 3,
+      rating_great: 5,
+    };
+
+    const rating = ratingMap[input];
+
+    if (!rating) {
+      // User typed something unexpected — remind them to use buttons
+      await whatsappApi.sendText(from, 'Lütfen yukarıdaki butonlardan birini seçerek puanlayın. 😊');
+      return;
+    }
+
+    // Post rating to dashboard
+    if (conversationId) {
+      try {
+        const dashboardUrl = process.env.DASHBOARD_API_URL || '';
+        const dashboardSecret = process.env.DASHBOARD_API_SECRET || process.env.API_PROXY_SECRET || '';
+
+        if (dashboardUrl && dashboardSecret) {
+          const res = await fetch(`${dashboardUrl}/api/live-chat/conversations/${conversationId}/rate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${dashboardSecret}`,
+            },
+            body: JSON.stringify({ rating }),
+          });
+
+          if (!res.ok) {
+            logger.warn('Rating POST failed', { conversationId, status: res.status });
+          } else {
+            logger.info('Rating submitted', { from, conversationId, rating });
+          }
+        }
+      } catch (err: any) {
+        logger.error('Rating submit error', { from, error: err.message });
+      }
+    }
+
+    // Thank user and return to welcome
+    const ratingLabels: Record<string, string> = {
+      rating_bad: '😞',
+      rating_ok: '😐',
+      rating_great: '😊',
+    };
+
+    await whatsappApi.sendText(
+      from,
+      `Geri bildiriminiz için teşekkür ederiz ${ratingLabels[input] || ''}! Başka bir konuda yardımcı olabilmemiz için "menü" yazabilirsiniz. 🙏`
+    );
+
+    // Clear rating data and return to welcome
+    const memberData = {
+      uyeId: session?.data?.uyeId,
+      isim: session?.data?.isim,
+      soyisim: session?.data?.soyisim,
+      mail: session?.data?.mail,
+    };
+    updateSession(from, { currentMenu: 'welcome', data: memberData });
   }
 
   // ============================
