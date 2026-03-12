@@ -627,7 +627,7 @@ class ChatbotRouter {
         `Birim: ${deptLabel}\n\n` +
         `Bir temsilci en kisa surede size donecektir. ` +
         `Lutfen mesajinizi yazin, temsilcimiz gorecektir.\n\n` +
-        `_Ana menuye donmek icin "merhaba" yazabilirsiniz._`
+        `_Ana menuye donmek icin "menu" yazabilirsiniz._`
       );
 
       logger.info('Live agent started', { from, department, conversationId: result.conversationId });
