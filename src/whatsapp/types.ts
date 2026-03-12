@@ -33,7 +33,7 @@ export interface WebhookMessage {
   from: string;
   id: string;
   timestamp: string;
-  type: 'text' | 'interactive' | 'image' | 'document' | 'location' | 'button';
+  type: 'text' | 'interactive' | 'image' | 'document' | 'location' | 'button' | 'order';
   text?: { body: string };
   interactive?: {
     type: 'button_reply' | 'list_reply';
@@ -42,6 +42,16 @@ export interface WebhookMessage {
   };
   button?: { payload: string; text: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  order?: {
+    catalog_id: string;
+    product_items: Array<{
+      product_retailer_id: string;
+      quantity: number;
+      item_price: number;
+      currency: string;
+    }>;
+    text?: string;
+  };
 }
 
 export interface WebhookStatus {

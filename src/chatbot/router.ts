@@ -51,6 +51,12 @@ class ChatbotRouter {
       return;
     }
 
+    // Handle catalog order messages
+    if (message.type === 'order' && message.order) {
+      await this.handleCatalogOrder(from, name, message);
+      return;
+    }
+
     // Route based on current menu state
     try {
       await this.route(from, name, session.currentMenu, input, message);
@@ -139,6 +145,69 @@ class ChatbotRouter {
         return message.button?.payload || '';
       default:
         return '';
+    }
+  }
+
+  /**
+   * Handle catalog order messages from WhatsApp Commerce
+   */
+  private async handleCatalogOrder(from: string, name: string, message: WebhookMessage): Promise<void> {
+    const order = message.order!;
+    const items = order.product_items || [];
+    const totalAmount = items.reduce((sum, item) => sum + (item.item_price * item.quantity), 0);
+    const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+
+    logger.info('Catalog order received', {
+      from,
+      catalogId: order.catalog_id,
+      itemCount: items.length,
+      totalItems,
+      totalAmount,
+    });
+
+    // Send confirmation to customer
+    const itemLines = items.map(item =>
+      `• ${item.product_retailer_id} x${item.quantity} — ${(item.item_price * item.quantity).toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    await whatsappApi.sendText(from,
+      `🛒 *Sepetiniz Alındı!*\n\n` +
+      `${itemLines}\n\n` +
+      `💰 *Toplam: ${totalAmount.toLocaleString('tr-TR')} TL*\n\n` +
+      `Siparişinizi tamamlamak için sitemizi ziyaret edin veya bir temsilcimiz size yardımcı olacaktır.\n\n` +
+      `_Ana menüye dönmek için "merhaba" yazabilirsiniz._`
+    );
+
+    // Report to dashboard for conversion tracking
+    try {
+      const dashboardUrl = process.env.DASHBOARD_URL || process.env.CHATBOT_DASHBOARD_URL || '';
+      const dashboardSecret = process.env.API_PROXY_SECRET || '';
+
+      if (dashboardUrl && dashboardSecret) {
+        await fetch(`${dashboardUrl}/api/track/catalog-order`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${dashboardSecret}`,
+          },
+          body: JSON.stringify({
+            phone: from,
+            catalogId: order.catalog_id,
+            items: items.map(i => ({
+              sku: i.product_retailer_id,
+              quantity: i.quantity,
+              price: i.item_price,
+              currency: i.currency,
+            })),
+            totalAmount,
+            totalItems,
+            messageId: message.id,
+          }),
+        });
+        logger.info('Catalog order reported to dashboard', { from, messageId: message.id });
+      }
+    } catch (err: any) {
+      logger.error('Failed to report catalog order to dashboard', { error: err.message });
     }
   }
 
