@@ -141,7 +141,23 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
         return m ? m[1] : '';
       };
 
-      const productBlocks = block.match(/<a:WebSepetUrun>/g) || [];
+      const productBlocks = block.match(/<a:WebSepetUrun>([\s\S]*?)<\/a:WebSepetUrun>/g) || [];
+      const products = productBlocks.map((pBlock: string) => {
+        const pTag = (tag: string) => {
+          const pm = pBlock.match(new RegExp(`<a:${tag}>([^<]*)<`));
+          return pm ? pm[1] : '';
+        };
+        return {
+          urunAdi: pTag('UrunAdi'),
+          urunId: parseInt(pTag('UrunID')) || 0,
+          urunKartiId: parseInt(pTag('UrunKartiID')) || 0,
+          stokKodu: pTag('StokKodu'),
+          spotResim: pTag('SpotResim'),
+          fiyat: parseFloat(pTag('UrunSepetFiyati')) || 0,
+          adet: parseInt(pTag('Adet')) || 1,
+          paraBirimi: pTag('ParaBirimi') || 'TRY',
+        };
+      });
 
       carts.push({
         uyeId: parseInt(extractTag('UyeID')) || 0,
@@ -149,7 +165,8 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
         email: extractTag('UyeMail'),
         cartDate: extractTag('SepetTarihi'),
         cartGuid: extractTag('GuidSepetID'),
-        productCount: productBlocks.length,
+        productCount: products.length,
+        products,
       });
     }
 
@@ -195,6 +212,7 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
         smsPermit: member?.smsPermit || false,
         mailPermit: member?.mailPermit || false,
         productCount: cart.productCount,
+        products: cart.products || [],
         cartDate: formattedDate,
         cartGuid: cart.cartGuid,
       };
@@ -398,7 +416,7 @@ webhookRoutes.post('/api/live-chat/close', async (req: Request, res: Response) =
 
     // Send closing message to customer
     await whatsappApi.sendText(phone,
-      'Gorusmeniz sonlandirildi. Tekrar yardim almak icin "merhaba" yazabilirsiniz. 😊'
+      'Görüşmeniz sonlandırıldı. Tekrar yardım almak için "menü" yazabilirsiniz. 😊'
     );
 
     logger.info('Live chat closed by agent', { phone });
