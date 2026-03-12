@@ -2,7 +2,7 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 
 const DASHBOARD_API_URL = process.env.DASHBOARD_API_URL || '';
-const DASHBOARD_API_SECRET = process.env.DASHBOARD_API_SECRET || '';
+const DASHBOARD_API_SECRET = process.env.DASHBOARD_API_SECRET || process.env.API_PROXY_SECRET || '';
 
 const client = axios.create({
   baseURL: DASHBOARD_API_URL,
