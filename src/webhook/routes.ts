@@ -712,6 +712,69 @@ webhookRoutes.get('/api/members/status', (req: Request, res: Response) => {
   });
 });
 
+// ============================
+// BULK ORDER QUERY (for conversion tracking)
+// ============================
+
+/**
+ * POST /api/orders/bulk — Query orders for multiple uyeIds
+ * Used by Dashboard conversion-check cron to match orders with sent messages
+ */
+webhookRoutes.post('/api/orders/bulk', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.DASHBOARD_API_SECRET || '';
+  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { uyeIds } = req.body;
+  if (!Array.isArray(uyeIds) || uyeIds.length === 0) {
+    res.status(400).json({ error: 'uyeIds array required' });
+    return;
+  }
+
+  const ids = uyeIds.slice(0, 100); // max 100 per request
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+    const { xmlParser } = await import('../ticimax/xml-parser');
+
+    const orders: any[] = [];
+    const CONCURRENCY = 5;
+
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const batch = ids.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (uyeId: number) => {
+          const xml = await soapClient.selectSiparisByUyeId(uyeId);
+          const siparisler = await xmlParser.parseSiparisler(xml);
+          return siparisler.map((s: any) => ({
+            uyeId,
+            siparisNo: s.siparisNo,
+            siparisTarihi: s.tarih,
+            tutar: s.toplamTutar,
+            durum: s.durum,
+            siparisId: s.id,
+          }));
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          orders.push(...result.value);
+        }
+      }
+    }
+
+    logger.info('Bulk order query completed', { requestedUyeIds: ids.length, ordersFound: orders.length });
+    res.json({ orders });
+  } catch (error: any) {
+    logger.error('Bulk order query failed', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /**
  * Normalize Turkish phone to 905XXXXXXXXX format
  */
