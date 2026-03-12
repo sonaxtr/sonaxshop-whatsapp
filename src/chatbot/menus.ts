@@ -163,8 +163,6 @@ export const ODEME_IBAN_TEXT =
 export const TEMSILCI_TEXT =
   `👤 *Temsilciye Bağlanma*\n\n` +
   `Bir temsilcimiz en kısa sürede size dönüş yapacaktır.\n\n` +
-  `📞 Telefon: 0850 307 7930\n` +
-  `📧 E-posta: info@sonaxshop.com.tr\n` +
   `🕐 Çalışma Saatleri: Hafta içi 09:00 - 18:00`;
 
 export const ADRES_DEGISIKLIGI_TEXT =
