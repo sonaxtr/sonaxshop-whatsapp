@@ -208,6 +208,50 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
 });
 
 /**
+ * Debug: Show raw WebSepetUrun XML fields from first cart
+ */
+webhookRoutes.get('/api/cart-debug-products', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+    const cartXml = await soapClient.request(
+      config.ticimax.endpoints.siparis,
+      'SelectSepet',
+      `<tem:SelectSepet>
+        <tem:UyeKodu>${config.ticimax.uyeKodu}</tem:UyeKodu>
+        <tem:filtre></tem:filtre>
+        <tem:sayfalama>
+          <ns:BaslangicIndex>0</ns:BaslangicIndex>
+          <ns:KayitSayisi>5</ns:KayitSayisi>
+          <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+          <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
+        </tem:sayfalama>
+      </tem:SelectSepet>`
+    );
+
+    // Extract first WebSepetUrun block to see all available fields
+    const firstSepet = cartXml.match(/<a:WebSepet>([\s\S]*?)<\/a:WebSepet>/);
+    const urunBlocks = firstSepet
+      ? (firstSepet[1].match(/<a:WebSepetUrun>([\s\S]*?)<\/a:WebSepetUrun>/g) || [])
+      : [];
+
+    res.json({
+      totalSepet: (cartXml.match(/<a:WebSepet>/g) || []).length,
+      firstSepetUrunCount: urunBlocks.length,
+      rawUrunBlocks: urunBlocks.slice(0, 3), // first 3 product blocks
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Cart data cache — stores data synced from local scraper
  * Local script scrapes admin panel (no Cloudflare from residential IP)
  * and POSTs the data here for dashboard consumption.
