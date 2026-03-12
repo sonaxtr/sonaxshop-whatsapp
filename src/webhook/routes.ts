@@ -722,7 +722,7 @@ webhookRoutes.get('/api/members/status', (req: Request, res: Response) => {
  */
 webhookRoutes.post('/api/orders/bulk', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
-  const expectedToken = process.env.DASHBOARD_API_SECRET || '';
+  const expectedToken = process.env.DASHBOARD_API_SECRET || process.env.API_PROXY_SECRET || '';
   if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
