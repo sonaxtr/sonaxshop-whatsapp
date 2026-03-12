@@ -33,13 +33,16 @@ export interface WebhookMessage {
   from: string;
   id: string;
   timestamp: string;
-  type: 'text' | 'interactive' | 'image' | 'document' | 'location' | 'button' | 'order';
+  type: 'text' | 'interactive' | 'image' | 'video' | 'document' | 'location' | 'button' | 'order';
   text?: { body: string };
   interactive?: {
     type: 'button_reply' | 'list_reply';
     button_reply?: { id: string; title: string };
     list_reply?: { id: string; title: string; description?: string };
   };
+  image?: { id: string; mime_type?: string; caption?: string };
+  video?: { id: string; mime_type?: string; caption?: string };
+  document?: { id: string; mime_type?: string; filename?: string; caption?: string };
   button?: { payload: string; text: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   order?: {

@@ -41,7 +41,8 @@ export async function forwardMessage(
   conversationId: string,
   content: string,
   customerName: string,
-  messageType: string = 'text'
+  messageType: string = 'text',
+  mediaUrl?: string
 ): Promise<void> {
   await client.post(`/api/live-chat/conversations/${conversationId}/messages`, {
     direction: 'inbound',
@@ -49,6 +50,7 @@ export async function forwardMessage(
     senderName: customerName,
     content,
     messageType,
+    mediaUrl,
   });
 }
 

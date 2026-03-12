@@ -9,6 +9,7 @@ import { handleUrunAction } from './handlers/urun';
 import { handleMagazaAction } from './handlers/magaza';
 import { handleKategoriAction } from './handlers/kategori';
 import { createConversation, forwardMessage, getConversationStatus, closeConversation } from './live-agent';
+import { downloadAndUpload } from '../utils/media';
 
 /**
  * Chatbot message router — State machine that manages menu navigation
@@ -598,7 +599,7 @@ class ChatbotRouter {
       // Already in a conversation?
       if (session?.data?.conversationId) {
         await whatsappApi.sendText(from,
-          'Temsilci baglantiniz zaten aktif. Mesajinizi yazabilirsiniz. 💬'
+          'Temsilci bağlantınız zaten aktif. Mesajınızı yazabilirsiniz. 💬'
         );
         updateSession(from, { currentMenu: 'live_agent' });
         return;
@@ -623,11 +624,11 @@ class ChatbotRouter {
                         department === 'genel' ? 'Genel Destek' : 'Online Destek';
 
       await whatsappApi.sendText(from,
-        `👤 *Temsilciye Baglaniyorsunuz*\n\n` +
+        `👤 *Temsilciye Bağlanıyorsunuz*\n\n` +
         `Birim: ${deptLabel}\n\n` +
-        `Bir temsilci en kisa surede size donecektir. ` +
-        `Lutfen mesajinizi yazin, temsilcimiz gorecektir.\n\n` +
-        `_Ana menuye donmek icin "menu" yazabilirsiniz._`
+        `Bir temsilci en kısa sürede size dönecektir. ` +
+        `Lütfen mesajınızı yazın, temsilcimiz görecektir.\n\n` +
+        `_Ana menüye dönmek için "menu" yazabilirsiniz._`
       );
 
       logger.info('Live agent started', { from, department, conversationId: result.conversationId });
@@ -664,7 +665,7 @@ class ChatbotRouter {
           mail: session?.data?.mail,
         };
         updateSession(from, { currentMenu: 'welcome', data: memberData });
-        await whatsappApi.sendText(from, 'Gorusme sonlandirildi. Tekrar yardimci olabilir miyim? 😊');
+        await whatsappApi.sendText(from, 'Görüşme sonlandırıldı. Tekrar yardımcı olabilir miyim? 😊');
         await this.showWelcome(from);
         return;
       }
@@ -676,15 +677,26 @@ class ChatbotRouter {
     let content = '';
     let messageType = 'text';
 
+    let mediaUrl: string | undefined;
+
     if (message.type === 'text') {
       content = message.text?.body || input;
     } else if (message.type === 'interactive') {
       content = message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || input;
     } else if (message.type === 'image') {
-      content = '[Gorsel gonderildi]';
+      const uploaded = await downloadAndUpload(message.image?.id, 'image');
+      content = uploaded || '[Görsel gönderilemedi]';
+      mediaUrl = uploaded || undefined;
       messageType = 'image';
+    } else if (message.type === 'video') {
+      const uploaded = await downloadAndUpload(message.video?.id, 'video');
+      content = uploaded || '[Video gönderilemedi]';
+      mediaUrl = uploaded || undefined;
+      messageType = 'video';
     } else if (message.type === 'document') {
-      content = '[Belge gonderildi]';
+      const uploaded = await downloadAndUpload(message.document?.id, 'raw');
+      content = uploaded || '[Belge gönderilemedi]';
+      mediaUrl = uploaded || undefined;
       messageType = 'document';
     } else if (message.type === 'location') {
       content = `[Konum: ${message.location?.latitude}, ${message.location?.longitude}]`;
@@ -697,7 +709,7 @@ class ChatbotRouter {
       const customerName = session?.data?.isim
         ? `${session.data.isim} ${session.data.soyisim || ''}`.trim()
         : (name || 'Musteri');
-      await forwardMessage(conversationId, content, customerName, messageType);
+      await forwardMessage(conversationId, content, customerName, messageType, mediaUrl);
     } catch (error: any) {
       logger.error('Failed to forward message', { from, conversationId, error: error.message });
     }
