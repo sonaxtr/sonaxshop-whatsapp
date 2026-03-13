@@ -190,12 +190,13 @@ export class TicimaxXmlParser {
         id: parseInt(u.ID) || 0,
         isim: u.Isim || '',
         soyisim: u.Soyisim || '',
+        adi: u.Isim || '',
+        soyadi: u.Soyisim || '',
         mail: u.Mail || '',
         cepTelefonu: u.CepTelefonu || '',
         telefon: u.Telefon || '',
-        smsIzin: u.SmsIzin === 'true' || u.SmsIzin === true,
-        mailIzin: u.MailIzin === 'true' || u.MailIzin === true,
-        il: u.Il || u.Sehir || '',
+        smsIzin: u.SMSIzin !== 'false' && u.SmsIzin !== 'false',
+        mailIzin: u.MailIzin !== 'false' && u.EMailIzin !== 'false',
       }));
     } catch (error: any) {
       logger.error('Parse uyeler error', { error: error.message });
@@ -252,6 +253,62 @@ export class TicimaxXmlParser {
     } catch (error: any) {
       logger.error('Parse uye ids error', { error: error.message });
       return [];
+    }
+  }
+
+  /**
+   * Parse cart (sepet) results from SelectSepet response
+   * Returns { sepetler, hasNext } for pagination support
+   */
+  async parseSepet(xml: string): Promise<SepetResult[]> {
+    const parsed = await this.parseSepetPage(xml);
+    return parsed.sepetler;
+  }
+
+  async parseSepetPage(xml: string): Promise<{ sepetler: SepetResult[]; hasNext: boolean }> {
+    try {
+      const result = await parseStringPromise(xml, XML_PARSE_OPTIONS);
+      const body = this.getBody(result);
+      const response = body?.SelectSepetResponse?.SelectSepetResult;
+
+      if (!response) return { sepetler: [], hasNext: false };
+
+      const hasNext = response?.Next === 'true' || response?.Next === true;
+
+      let sepetler = response?.Sepetler?.WebSepet;
+      if (!sepetler) return { sepetler: [], hasNext };
+      if (!Array.isArray(sepetler)) sepetler = [sepetler];
+
+      const parsed = sepetler.map((s: any) => {
+        let urunler = s.Urunler?.WebSepetUrun;
+        if (!urunler) urunler = [];
+        if (!Array.isArray(urunler)) urunler = [urunler];
+
+        const parsedUrunler: SepetUrunResult[] = urunler.map((u: any) => ({
+          urunAdi: u.UrunAdi || '',
+          adet: parseInt(u.Adet || '1'),
+          fiyat: parseFloat(u.UrunSepetFiyati || '0'),
+          kdvTutari: parseFloat(u.KDVTutari || '0'),
+          resimUrl: u.SpotResim || '',
+          stokKodu: u.StokKodu || '',
+          urunId: parseInt(u.UrunID || '0'),
+          urunKartiId: parseInt(u.UrunKartiID || '0'),
+        }));
+
+        return {
+          guidSepetId: s.GuidSepetID || '',
+          uyeId: parseInt(s.UyeID || '0'),
+          uyeAdi: s.UyeAdi || '',
+          uyeMail: s.UyeMail || '',
+          sepetTarihi: s.SepetTarihi || '',
+          urunler: parsedUrunler,
+        };
+      });
+
+      return { sepetler: parsed, hasNext };
+    } catch (error: any) {
+      logger.error('Parse sepet error', { error: error.message });
+      return { sepetler: [], hasNext: false };
     }
   }
 
@@ -321,12 +378,13 @@ export interface UyeResult {
   id: number;
   isim: string;
   soyisim: string;
+  adi: string;
+  soyadi: string;
   mail: string;
   cepTelefonu: string;
   telefon: string;
   smsIzin: boolean;
   mailIzin: boolean;
-  il: string;
 }
 
 export interface KategoriResult {
@@ -347,6 +405,26 @@ export interface HediyeCekiResult {
   isActive: boolean;
   usageCount: number;
   maxUsageCount: number;
+}
+
+export interface SepetResult {
+  guidSepetId: string;
+  uyeId: number;
+  uyeAdi: string;
+  uyeMail: string;
+  sepetTarihi: string;
+  urunler: SepetUrunResult[];
+}
+
+export interface SepetUrunResult {
+  urunAdi: string;
+  adet: number;
+  fiyat: number;
+  kdvTutari: number;
+  resimUrl: string;
+  stokKodu: string;
+  urunId: number;
+  urunKartiId: number;
 }
 
 export const xmlParser = new TicimaxXmlParser();

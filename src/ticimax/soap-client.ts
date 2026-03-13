@@ -35,7 +35,7 @@ export class TicimaxSoapClient {
           'Content-Type': 'text/xml; charset=utf-8',
           SOAPAction: soapAction,
         },
-        timeout: 120000, // 120s — KayitSayisi=20000 may take longer for large datasets
+        timeout: 120000,
       });
 
       return response.data;
@@ -105,15 +105,41 @@ export class TicimaxSoapClient {
 
   /**
    * Search product by UrunKartiID
+   * Aktif=-1 (no filter) to include all products
    */
   async selectUrunByKartiId(urunKartiId: number): Promise<string> {
     const body = `<tem:SelectUrun>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
       <tem:f>
-        <ns:Aktif>1</ns:Aktif>
+        <ns:Aktif>-1</ns:Aktif>
         <ns:UrunKartiID>${urunKartiId}</ns:UrunKartiID>
       </tem:f>
       <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>1</ns:KayitSayisi>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
+      </tem:s>
+    </tem:SelectUrun>`;
+
+    return this.request(config.ticimax.endpoints.urun, 'SelectUrun', body);
+  }
+
+  /**
+   * Get all products (active + inactive) for URL cache
+   * Used by /api/product-url to build UrunKartiID → URL map
+   */
+  async selectAllUrunlerForUrls(): Promise<string> {
+    const body = `<tem:SelectUrun>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:f>
+        <ns:Aktif>-1</ns:Aktif>
+      </tem:f>
+      <tem:s>
+        <ns:BaslangicIndex>0</ns:BaslangicIndex>
+        <ns:KayitSayisi>2000</ns:KayitSayisi>
+        <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
+        <ns:SiralamaYonu>ASC</ns:SiralamaYonu>
       </tem:s>
     </tem:SelectUrun>`;
 
@@ -170,10 +196,16 @@ export class TicimaxSoapClient {
     return this.request(config.ticimax.endpoints.siparis, 'SelectSiparis', body);
   }
 
+  // ============================
+  // SEPET SERVİS (SiparisServis)
+  // ============================
+
   /**
    * Get carts within a date range (single page)
-   * uyeId: -1 for all members, sepetId: -1 for all carts
+   * uyeId: -1 for all members, or specific member ID
+   * sepetId: -1 for all carts, or specific cart ID
    * sayfaSayisi: page number (1-based), each page returns ~100 records
+   * Defaults to last 30 days, all members, all carts, page 1
    */
   async selectSepet(startDate?: string, endDate?: string, uyeId: number = -1, sepetId: number = -1, sayfaSayisi: number = 1): Promise<string> {
     const start = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -181,6 +213,7 @@ export class TicimaxSoapClient {
 
     const body = `<tem:SelectSepet>
       <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:sepetId>${sepetId}</tem:sepetId>
       <tem:uyeId>${uyeId}</tem:uyeId>
       <tem:BaslangicTarihi>${start}</tem:BaslangicTarihi>
       <tem:BitisTarihi>${end}</tem:BitisTarihi>
@@ -192,18 +225,21 @@ export class TicimaxSoapClient {
 
   /**
    * Fetch ALL carts via pagination (SelectSepet with sayfaSayisi)
-   * Returns combined XML pages from all pages
+   * Fetches all pages, filters UyeID > 0 (registered members only)
+   * Returns combined results from all pages
    */
   async selectAllSepetler(startDate?: string, endDate?: string): Promise<{ xmlPages: string[]; totalPages: number }> {
     const xmlPages: string[] = [];
     let page = 1;
-    const maxPages = 50;
+    const maxPages = 50; // Safety limit
 
     while (page <= maxPages) {
       logger.info(`SelectSepet page ${page}...`);
       const xml = await this.selectSepet(startDate, endDate, -1, -1, page);
       xmlPages.push(xml);
 
+      // Check if there are more pages
+      // XML format: <a:Next>true</a:Next> or <Next>true</Next>
       const hasWebSepet = xml.includes('WebSepet');
       const nextMatch = xml.match(/Next>(\w+)</i);
       const hasNext = nextMatch ? nextMatch[1].toLowerCase() === 'true' : false;
@@ -211,11 +247,28 @@ export class TicimaxSoapClient {
       logger.info(`SelectSepet page ${page}: hasData=${hasWebSepet}, next=${nextMatch?.[1] || 'not found'}`);
 
       if (!hasWebSepet || !hasNext) break;
+
       page++;
     }
 
     logger.info(`SelectSepet pagination complete: ${page} pages fetched`);
     return { xmlPages, totalPages: page };
+  }
+
+  /**
+   * Get cart details for a specific member or cart
+   */
+  async getSepet(uyeId?: number, sepetId?: number): Promise<string> {
+    const body = `<tem:GetSepet>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:request>
+        <ns:KampanyaID>-1</ns:KampanyaID>
+        <ns:SepetID>${sepetId || -1}</ns:SepetID>
+        <ns:UyeID>${uyeId || -1}</ns:UyeID>
+      </tem:request>
+    </tem:GetSepet>`;
+
+    return this.request(config.ticimax.endpoints.siparis, 'GetSepet', body);
   }
 
   // ============================
@@ -276,33 +329,6 @@ export class TicimaxSoapClient {
   }
 
   /**
-   * Fetch ALL active members with pagination
-   * Returns raw XML for each page
-   */
-  async selectAllUyeler(sayfaNo: number = 1, kayitSayisi: number = 100, smsIzin: number = -1, mailIzin: number = -1): Promise<string> {
-    const body = `<tem:SelectUyeler>
-      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
-      <tem:filtre>
-        <ns:Aktif>1</ns:Aktif>
-        <ns:AlisverisYapti>-1</ns:AlisverisYapti>
-        <ns:Cinsiyet>-1</ns:Cinsiyet>
-        <ns:MailIzin>${mailIzin}</ns:MailIzin>
-        <ns:SmsIzin>${smsIzin}</ns:SmsIzin>
-        <ns:Telefon></ns:Telefon>
-        <ns:UyeID>-1</ns:UyeID>
-      </tem:filtre>
-      <tem:sayfalama>
-        <ns:KayitSayisi>${kayitSayisi}</ns:KayitSayisi>
-        <ns:SiralamaDegeri>id</ns:SiralamaDegeri>
-        <ns:SiralamaYonu>Asc</ns:SiralamaYonu>
-        <ns:SayfaNo>${sayfaNo}</ns:SayfaNo>
-      </tem:sayfalama>
-    </tem:SelectUyeler>`;
-
-    return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
-  }
-
-  /**
    * Get member details by UyeID
    */
   async selectUyelerById(uyeId: number): Promise<string> {
@@ -325,6 +351,50 @@ export class TicimaxSoapClient {
     </tem:SelectUyeler>`;
 
     return this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
+  }
+
+  /**
+   * Get all active members (paginated), returns all pages
+   */
+  async selectAllUyeler(pageSize: number = 100): Promise<string[]> {
+    const pages: string[] = [];
+    let pageNo = 1;
+    const maxPages = 20; // Safety limit
+
+    while (pageNo <= maxPages) {
+      const body = `<tem:SelectUyeler>
+        <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+        <tem:filtre>
+          <ns:Aktif>1</ns:Aktif>
+          <ns:AlisverisYapti>-1</ns:AlisverisYapti>
+          <ns:Cinsiyet>-1</ns:Cinsiyet>
+          <ns:MailIzin>-1</ns:MailIzin>
+          <ns:SmsIzin>-1</ns:SmsIzin>
+          <ns:UyeID>-1</ns:UyeID>
+        </tem:filtre>
+        <tem:sayfalama>
+          <ns:KayitSayisi>${pageSize}</ns:KayitSayisi>
+          <ns:SiralamaDegeri>id</ns:SiralamaDegeri>
+          <ns:SiralamaYonu>Desc</ns:SiralamaYonu>
+          <ns:SayfaNo>${pageNo}</ns:SayfaNo>
+        </tem:sayfalama>
+      </tem:SelectUyeler>`;
+
+      const xml = await this.request(config.ticimax.endpoints.uye, 'SelectUyeler', body);
+      pages.push(xml);
+
+      // Check if there are more pages by looking for Uye elements
+      const hasUye = xml.includes('<a:Uye>') || xml.includes(':Uye>');
+      if (!hasUye) break;
+
+      // Check if we got a full page (if less than pageSize, this is the last page)
+      const uyeCount = (xml.match(/<a:Uye>/g) || xml.match(/:Uye>/g) || []).length;
+      if (uyeCount < pageSize) break;
+
+      pageNo++;
+    }
+
+    return pages;
   }
 
   // ============================
