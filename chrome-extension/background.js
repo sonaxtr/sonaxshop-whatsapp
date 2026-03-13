@@ -631,16 +631,20 @@ function scrapeCartReportPage() {
       .replace(/\s+/g, '')
       .replace(/\+/g, '');
 
-    // Extract cart GUID from action column (last cell)
+    // Extract cart GUID from the row — search all cells, check href + onclick + innerHTML
     let cartGuid = '';
-    const lastCell = cells[cells.length - 1];
-    if (lastCell) {
-      const sepetLink = lastCell.querySelector('a[href*="openUyeSepet"]');
-      if (sepetLink) {
-        const href = sepetLink.getAttribute('href') || '';
-        const guidMatch = href.match(/openUyeSepet\('([^']+)'\)/);
-        if (guidMatch) cartGuid = guidMatch[1];
-      }
+    const rowHtml = row.innerHTML || '';
+    // Try multiple patterns: openUyeSepet('GUID'), SepetDetay?guid=GUID, etc.
+    const guidPatterns = [
+      /openUyeSepet\(['"]([^'"]+)['"]\)/,
+      /SepetDetay[^'"]*guid=([a-f0-9-]+)/i,
+      /UyeSepetDetay[^'"]*guid=([a-f0-9-]+)/i,
+      /UyeSepet[^'"]*guid=([a-f0-9-]+)/i,
+      /sepetGuid=([a-f0-9-]+)/i,
+    ];
+    for (const pattern of guidPatterns) {
+      const m = rowHtml.match(pattern);
+      if (m) { cartGuid = m[1]; break; }
     }
 
     rows.push({
