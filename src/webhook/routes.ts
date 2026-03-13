@@ -153,7 +153,7 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
             urunKartiId: parseInt(pTag('UrunKartiID')) || 0,
             stokKodu: pTag('StokKodu'),
             spotResim: pTag('SpotResim'),
-            fiyat: parseFloat(pTag('UrunSepetFiyati')) || 0,
+            fiyat: (parseFloat(pTag('UrunSepetFiyati')) || 0) + (parseFloat(pTag('KDVTutari')) || 0),
             adet: parseInt(pTag('Adet')) || 1,
             paraBirimi: pTag('ParaBirimi') || 'TRY',
           };
