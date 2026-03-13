@@ -633,7 +633,7 @@ function scrapeCartReportPage() {
 
     // Extract cart GUID from the row — search all cells, check href + onclick + innerHTML
     let cartGuid = '';
-    const rowHtml = row.innerHTML || '';
+    const rowHtml = trs[i].innerHTML || '';
     // Try multiple patterns: openUyeSepet('GUID'), SepetDetay?guid=GUID, etc.
     const guidPatterns = [
       /openUyeSepet\(['"]([^'"]+)['"]\)/,
