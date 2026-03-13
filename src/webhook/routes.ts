@@ -159,11 +159,20 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
           };
         });
 
+        // Format date to Turkish locale
+        let cartDate = extractTag('SepetTarihi');
+        try {
+          const d = new Date(cartDate);
+          if (!isNaN(d.getTime())) {
+            cartDate = d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+          }
+        } catch { /* keep original */ }
+
         rows.push({
           uyeId,
           uyeName: extractTag('UyeAdi'),
           email: extractTag('UyeMail'),
-          cartDate: extractTag('SepetTarihi'),
+          cartDate,
           cartGuid: extractTag('GuidSepetID'),
           productCount: products.length,
           products,
