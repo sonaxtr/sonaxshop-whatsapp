@@ -189,7 +189,9 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/product-url?urunKartiId=115 — Get product URL from SOAP
+ * GET /api/product-url — Get product URL by UrunKartiID + product name
+ * Generates Ticimax-style URL slug from product name + ID
+ * (e.g., "Sonax Hızlı Cila 500 ml" + ID 115 → /sonax-hizli-cila-500-ml-115)
  */
 webhookRoutes.get('/api/product-url', async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
@@ -200,21 +202,39 @@ webhookRoutes.get('/api/product-url', async (req: Request, res: Response) => {
   }
 
   const urunKartiId = parseInt(req.query.urunKartiId as string);
+  const urunAdi = (req.query.urunAdi as string) || '';
+
   if (!urunKartiId) {
     res.status(400).json({ error: 'urunKartiId required' });
     return;
   }
 
-  try {
-    const { soapClient } = await import('../ticimax/soap-client');
-    const xml = await soapClient.selectUrunByKartiId(urunKartiId);
-    const urlMatch = xml.match(/<a:Url>([^<]*)</) || xml.match(/<a:UrunSayfaAdresi>([^<]*)</);
-    const url = urlMatch ? urlMatch[1] : '';
-    res.json({ urunKartiId, url });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  let url = '';
+  if (urunAdi) {
+    const slug = slugifyTurkish(urunAdi);
+    url = `/${slug}-${urunKartiId}`;
   }
+
+  logger.info('Product URL lookup', { urunKartiId, urunAdi, url: url || '(empty)' });
+  res.json({ urunKartiId, url });
 });
+
+/**
+ * Generate a Turkish-safe URL slug
+ */
+function slugifyTurkish(text: string): string {
+  const charMap: Record<string, string> = {
+    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
+    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u',
+  };
+  return text
+    .split('')
+    .map(c => charMap[c] || c)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 /**
  * Debug: Show raw WebSepetUrun XML fields from first cart
