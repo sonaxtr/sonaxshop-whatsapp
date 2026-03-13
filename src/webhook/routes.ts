@@ -189,6 +189,34 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/product-url?urunKartiId=115 — Get product URL from SOAP
+ */
+webhookRoutes.get('/api/product-url', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.API_PROXY_SECRET || 'sonax-proxy-2024';
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const urunKartiId = parseInt(req.query.urunKartiId as string);
+  if (!urunKartiId) {
+    res.status(400).json({ error: 'urunKartiId required' });
+    return;
+  }
+
+  try {
+    const { soapClient } = await import('../ticimax/soap-client');
+    const xml = await soapClient.selectUrunByKartiId(urunKartiId);
+    const urlMatch = xml.match(/<a:Url>([^<]*)</) || xml.match(/<a:UrunSayfaAdresi>([^<]*)</);
+    const url = urlMatch ? urlMatch[1] : '';
+    res.json({ urunKartiId, url });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Debug: Show raw WebSepetUrun XML fields from first cart
  */
 webhookRoutes.get('/api/cart-debug-products', async (req: Request, res: Response) => {
