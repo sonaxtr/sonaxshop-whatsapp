@@ -115,109 +115,63 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
   try {
     const { soapClient } = await import('../ticimax/soap-client');
 
-    // Step 1: Fetch all carts via SelectSepet
-    const cartXml = await soapClient.request(
-      config.ticimax.endpoints.siparis,
-      'SelectSepet',
-      `<tem:SelectSepet>
-        <tem:UyeKodu>${config.ticimax.uyeKodu}</tem:UyeKodu>
-        <tem:filtre></tem:filtre>
-        <tem:sayfalama>
-          <ns:BaslangicIndex>0</ns:BaslangicIndex>
-          <ns:KayitSayisi>200</ns:KayitSayisi>
-          <ns:SiralamaDegeri>ID</ns:SiralamaDegeri>
-          <ns:SiralamaYonu>DESC</ns:SiralamaYonu>
-        </tem:sayfalama>
-      </tem:SelectSepet>`
-    );
+    // Fetch ALL carts via paginated SelectSepet
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const endDate = new Date().toISOString().split('T')[0];
 
-    // Parse cart XML
-    const carts: any[] = [];
-    const sepetMatches = cartXml.match(/<a:WebSepet>([\s\S]*?)<\/a:WebSepet>/g) || [];
+    logger.info('Cart report: fetching all carts via pagination...', { startDate, endDate });
+    const { xmlPages, totalPages } = await soapClient.selectAllSepetler(startDate, endDate);
 
-    for (const block of sepetMatches) {
-      const extractTag = (tag: string) => {
-        const m = block.match(new RegExp(`<a:${tag}>([^<]*)<`));
-        return m ? m[1] : '';
-      };
+    // Parse all pages, filter UyeID > 0, collect rows
+    const rows: any[] = [];
+    let totalCarts = 0;
 
-      const productBlocks = block.match(/<a:WebSepetUrun>([\s\S]*?)<\/a:WebSepetUrun>/g) || [];
-      const products = productBlocks.map((pBlock: string) => {
-        const pTag = (tag: string) => {
-          const pm = pBlock.match(new RegExp(`<a:${tag}>([^<]*)<`));
-          return pm ? pm[1] : '';
+    for (const pageXml of xmlPages) {
+      const sepetMatches = pageXml.match(/<a:WebSepet>([\s\S]*?)<\/a:WebSepet>/g) || [];
+      totalCarts += sepetMatches.length;
+
+      for (const block of sepetMatches) {
+        const extractTag = (tag: string) => {
+          const m = block.match(new RegExp(`<a:${tag}>([^<]*)<`));
+          return m ? m[1] : '';
         };
-        return {
-          urunAdi: pTag('UrunAdi'),
-          urunId: parseInt(pTag('UrunID')) || 0,
-          urunKartiId: parseInt(pTag('UrunKartiID')) || 0,
-          stokKodu: pTag('StokKodu'),
-          spotResim: pTag('SpotResim'),
-          fiyat: parseFloat(pTag('UrunSepetFiyati')) || 0,
-          adet: parseInt(pTag('Adet')) || 1,
-          paraBirimi: pTag('ParaBirimi') || 'TRY',
-        };
-      });
 
-      carts.push({
-        uyeId: parseInt(extractTag('UyeID')) || 0,
-        uyeName: extractTag('UyeAdi'),
-        email: extractTag('UyeMail'),
-        cartDate: extractTag('SepetTarihi'),
-        cartGuid: extractTag('GuidSepetID'),
-        productCount: products.length,
-        products,
-      });
-    }
+        const uyeId = parseInt(extractTag('UyeID')) || 0;
+        if (uyeId <= 0) continue; // Skip guest carts
 
-    // Step 2: Lookup member phone/SMS for unique UyeIDs
-    const uyeIds = [...new Set(carts.filter(c => c.uyeId > 0).map(c => c.uyeId))];
-    const memberInfo: Record<number, { phone: string; smsPermit: boolean; mailPermit: boolean }> = {};
+        const productBlocks = block.match(/<a:WebSepetUrun>([\s\S]*?)<\/a:WebSepetUrun>/g) || [];
+        if (productBlocks.length === 0) continue; // Skip empty carts
 
-    const BATCH = 5;
-    for (let i = 0; i < uyeIds.length; i += BATCH) {
-      const batch = uyeIds.slice(i, i + BATCH);
-      await Promise.all(batch.map(async (uyeId) => {
-        try {
-          const memberXml = await soapClient.selectUyelerById(uyeId);
-          const phoneMatch = memberXml.match(/<a:Telefon>([^<]*)</);
-          const smsMatch = memberXml.match(/<a:SmsIzin>([^<]*)</);
-          const mailMatch = memberXml.match(/<a:MailIzin>([^<]*)</);
-
-          memberInfo[uyeId] = {
-            phone: phoneMatch ? phoneMatch[1] : '',
-            smsPermit: smsMatch ? smsMatch[1] === 'true' : false,
-            mailPermit: mailMatch ? mailMatch[1] === 'true' : false,
+        const products = productBlocks.map((pBlock: string) => {
+          const pTag = (tag: string) => {
+            const pm = pBlock.match(new RegExp(`<a:${tag}>([^<]*)<`));
+            return pm ? pm[1] : '';
           };
-        } catch (err) {
-          logger.error(`Failed to lookup member ${uyeId}`, { error: (err as any).message });
-        }
-      }));
+          return {
+            urunAdi: pTag('UrunAdi'),
+            urunId: parseInt(pTag('UrunID')) || 0,
+            urunKartiId: parseInt(pTag('UrunKartiID')) || 0,
+            stokKodu: pTag('StokKodu'),
+            spotResim: pTag('SpotResim'),
+            fiyat: parseFloat(pTag('UrunSepetFiyati')) || 0,
+            adet: parseInt(pTag('Adet')) || 1,
+            paraBirimi: pTag('ParaBirimi') || 'TRY',
+          };
+        });
+
+        rows.push({
+          uyeId,
+          uyeName: extractTag('UyeAdi'),
+          email: extractTag('UyeMail'),
+          cartDate: extractTag('SepetTarihi'),
+          cartGuid: extractTag('GuidSepetID'),
+          productCount: products.length,
+          products,
+        });
+      }
     }
 
-    // Step 3: Merge cart + member data
-    const rows = carts.map(cart => {
-      const member = memberInfo[cart.uyeId];
-      let formattedDate = cart.cartDate;
-      try {
-        const d = new Date(cart.cartDate);
-        formattedDate = d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
-      } catch { /* keep original */ }
-
-      return {
-        uyeId: cart.uyeId,
-        uyeName: cart.uyeName,
-        email: cart.email,
-        phone: member?.phone || '',
-        smsPermit: member?.smsPermit || false,
-        mailPermit: member?.mailPermit || false,
-        productCount: cart.productCount,
-        products: cart.products || [],
-        cartDate: formattedDate,
-        cartGuid: cart.cartGuid,
-      };
-    });
-
+    logger.info(`Cart report: ${totalPages} pages, ${totalCarts} total carts, ${rows.length} member carts with products`);
     res.json({ rows, totalRecords: rows.length });
   } catch (error: any) {
     logger.error('Cart report proxy error', { error: error.message });

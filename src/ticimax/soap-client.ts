@@ -170,6 +170,54 @@ export class TicimaxSoapClient {
     return this.request(config.ticimax.endpoints.siparis, 'SelectSiparis', body);
   }
 
+  /**
+   * Get carts within a date range (single page)
+   * uyeId: -1 for all members, sepetId: -1 for all carts
+   * sayfaSayisi: page number (1-based), each page returns ~100 records
+   */
+  async selectSepet(startDate?: string, endDate?: string, uyeId: number = -1, sepetId: number = -1, sayfaSayisi: number = 1): Promise<string> {
+    const start = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const end = endDate || new Date().toISOString().split('T')[0];
+
+    const body = `<tem:SelectSepet>
+      <tem:UyeKodu>${this.uyeKodu}</tem:UyeKodu>
+      <tem:uyeId>${uyeId}</tem:uyeId>
+      <tem:BaslangicTarihi>${start}</tem:BaslangicTarihi>
+      <tem:BitisTarihi>${end}</tem:BitisTarihi>
+      <tem:sayfaSayisi>${sayfaSayisi}</tem:sayfaSayisi>
+    </tem:SelectSepet>`;
+
+    return this.request(config.ticimax.endpoints.siparis, 'SelectSepet', body);
+  }
+
+  /**
+   * Fetch ALL carts via pagination (SelectSepet with sayfaSayisi)
+   * Returns combined XML pages from all pages
+   */
+  async selectAllSepetler(startDate?: string, endDate?: string): Promise<{ xmlPages: string[]; totalPages: number }> {
+    const xmlPages: string[] = [];
+    let page = 1;
+    const maxPages = 50;
+
+    while (page <= maxPages) {
+      logger.info(`SelectSepet page ${page}...`);
+      const xml = await this.selectSepet(startDate, endDate, -1, -1, page);
+      xmlPages.push(xml);
+
+      const hasWebSepet = xml.includes('WebSepet');
+      const nextMatch = xml.match(/Next>(\w+)</i);
+      const hasNext = nextMatch ? nextMatch[1].toLowerCase() === 'true' : false;
+
+      logger.info(`SelectSepet page ${page}: hasData=${hasWebSepet}, next=${nextMatch?.[1] || 'not found'}`);
+
+      if (!hasWebSepet || !hasNext) break;
+      page++;
+    }
+
+    logger.info(`SelectSepet pagination complete: ${page} pages fetched`);
+    return { xmlPages, totalPages: page };
+  }
+
   // ============================
   // CUSTOM SERVİS
   // ============================
