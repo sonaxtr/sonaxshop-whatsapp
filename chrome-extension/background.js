@@ -344,7 +344,186 @@ async function handleSyncCarts(port) {
     }
     const dedupedRows = Array.from(uniqueMap.values());
     console.log('[SonaxSync] Deduplication:', allRows.length, '->', dedupedRows.length, 'unique members');
-    sendProgress(`Tamamlandi! ${dedupedRows.length} tekil uye bulundu (${allRows.length} kayittan).`);
+    sendProgress(`${dedupedRows.length} tekil uye bulundu. Urun detaylari cekiliyor...`);
+
+    // --- Phase 2: Fetch product details for members with valid phones ---
+    const rowsWithPhones = dedupedRows.filter(
+      (r) => r.phone && r.phone.replace(/\D/g, '').length >= 10 && r.cartGuid
+    );
+    console.log('[SonaxSync] Rows with phones + cartGuid:', rowsWithPhones.length);
+
+    if (rowsWithPhones.length > 0) {
+      // First, detect the openUyeSepet URL pattern from the page
+      const urlPatternResult = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN',
+        func: () => {
+          // Try to read openUyeSepet function source to find URL pattern
+          if (typeof openUyeSepet === 'function') {
+            const src = openUyeSepet.toString();
+            console.log('[SonaxSync-page] openUyeSepet source:', src);
+            // Look for URL in window.open or location patterns
+            const urlMatch = src.match(/['"]([^'"]*(?:Sepet|sepet|Cart|cart)[^'"]*)['"]/i);
+            if (urlMatch) return urlMatch[1];
+          }
+          return null;
+        },
+      });
+      const detailUrlPattern = urlPatternResult[0]?.result;
+      console.log('[SonaxSync] Detail URL pattern:', detailUrlPattern);
+
+      let fetchedCount = 0;
+      const DETAIL_BATCH = 5; // fetch 5 at a time
+      const DETAIL_DELAY = 300; // ms between batches
+
+      for (let i = 0; i < rowsWithPhones.length; i++) {
+        const row = rowsWithPhones[i];
+
+        if (i % 10 === 0) {
+          sendProgress(`Urun detaylari: ${fetchedCount}/${rowsWithPhones.length} uye islendi...`);
+        }
+
+        try {
+          const productResult = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: 'MAIN',
+            func: async (guid, urlPattern) => {
+              try {
+                // Try multiple URL patterns for cart detail
+                const urls = [];
+                if (urlPattern) {
+                  // Replace guid placeholder if present
+                  if (urlPattern.includes('{0}') || urlPattern.includes("'+")) {
+                    urls.push(urlPattern.replace(/\{0\}|'\s*\+\s*\w+\s*\+\s*'/g, guid));
+                  }
+                  urls.push(urlPattern + guid);
+                }
+                // Common Ticimax patterns
+                urls.push(`/Admin/UyeSepetDetay.aspx?guid=${guid}`);
+                urls.push(`/Admin/UyeSepet.aspx?guid=${guid}`);
+                urls.push(`/Admin/SepetDetay.aspx?sepetGuid=${guid}`);
+
+                let html = '';
+                for (const url of urls) {
+                  try {
+                    const resp = await fetch(url, { credentials: 'include' });
+                    if (resp.ok) {
+                      html = await resp.text();
+                      if (html.includes('UrunAdi') || html.includes('urunadi') ||
+                          html.includes('Ürün') || html.includes('table') ||
+                          html.includes('img')) {
+                        break;
+                      }
+                    }
+                  } catch {}
+                }
+
+                if (!html) return [];
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const products = [];
+
+                // Strategy 1: Find product table rows
+                const allTables = doc.querySelectorAll('table');
+                for (const table of allTables) {
+                  const rows = table.querySelectorAll('tr');
+                  if (rows.length < 2) continue;
+                  const headerText = (rows[0].innerText || '').toLowerCase();
+                  if (!headerText.includes('ürün') && !headerText.includes('urun') &&
+                      !headerText.includes('ad') && !headerText.includes('fiyat')) continue;
+
+                  for (let r = 1; r < rows.length; r++) {
+                    const cells = rows[r].querySelectorAll('td');
+                    if (cells.length < 2) continue;
+
+                    // Find image
+                    let spotResim = '';
+                    const img = rows[r].querySelector('img');
+                    if (img) spotResim = img.getAttribute('src') || '';
+
+                    // Find product name - usually in a cell with the most text
+                    let urunAdi = '';
+                    let fiyat = 0;
+                    let stokKodu = '';
+                    let adet = 1;
+
+                    for (const cell of cells) {
+                      const text = cell.textContent.trim();
+                      // Price detection (Turkish format: 1.234,56 or just numbers with comma)
+                      const priceMatch = text.match(/(\d{1,3}(?:\.\d{3})*,\d{2})/);
+                      if (priceMatch && !fiyat) {
+                        fiyat = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+                      }
+                      // Quantity detection
+                      const qtyMatch = text.match(/^(\d+)$/);
+                      if (qtyMatch && parseInt(qtyMatch[1]) > 0 && parseInt(qtyMatch[1]) < 1000) {
+                        adet = parseInt(qtyMatch[1]);
+                      }
+                      // Product name - longest non-numeric text
+                      if (text.length > urunAdi.length && !priceMatch && !/^\d+$/.test(text)) {
+                        urunAdi = text;
+                      }
+                    }
+
+                    if (urunAdi) {
+                      products.push({ urunAdi, spotResim, fiyat, stokKodu, adet, paraBirimi: 'TRY' });
+                    }
+                  }
+                  if (products.length > 0) break;
+                }
+
+                // Strategy 2: If no table found, look for repeated product-like elements
+                if (products.length === 0) {
+                  const allImgs = doc.querySelectorAll('img[src*="Upload"], img[src*="upload"], img[src*="Resim"], img[src*="resim"]');
+                  allImgs.forEach((img) => {
+                    const parent = img.closest('tr') || img.closest('div') || img.parentElement;
+                    if (!parent) return;
+                    const text = parent.textContent || '';
+                    const priceMatch = text.match(/(\d{1,3}(?:\.\d{3})*,\d{2})/);
+                    const nameText = text.replace(/\d{1,3}(?:\.\d{3})*,\d{2}/g, '').trim().substring(0, 200);
+                    if (nameText.length > 3) {
+                      products.push({
+                        urunAdi: nameText.split('\n')[0].trim().substring(0, 150),
+                        spotResim: img.getAttribute('src') || '',
+                        fiyat: priceMatch ? parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.')) : 0,
+                        stokKodu: '',
+                        adet: 1,
+                        paraBirimi: 'TRY',
+                      });
+                    }
+                  });
+                }
+
+                return products;
+              } catch (e) {
+                console.warn('[SonaxSync-page] Product detail fetch error:', e.message);
+                return [];
+              }
+            },
+            args: [row.cartGuid, detailUrlPattern],
+          });
+
+          const products = productResult[0]?.result || [];
+          if (products.length > 0) {
+            row.products = products;
+            fetchedCount++;
+          }
+        } catch (e) {
+          console.warn('[SonaxSync] Product detail script error for uyeId', row.uyeId, ':', e.message);
+        }
+
+        // Small delay to not overload Ticimax
+        if (i > 0 && i % DETAIL_BATCH === 0) {
+          await sleep(DETAIL_DELAY);
+        }
+      }
+
+      sendProgress(`Urun detaylari tamamlandi: ${fetchedCount}/${rowsWithPhones.length} uyenin urunleri cekildi.`);
+      console.log('[SonaxSync] Product details fetched for', fetchedCount, 'members');
+    }
+
+    sendProgress(`Tamamlandi! ${dedupedRows.length} tekil uye, ${rowsWithPhones.filter(r => r.products).length} urun detayli.`);
 
     // Close the Ticimax tab
     try {
