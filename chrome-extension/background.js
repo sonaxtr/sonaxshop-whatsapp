@@ -417,8 +417,13 @@ async function handleSyncCarts(port) {
                     ? cells[colIdx.stokKodu]?.textContent?.trim() || ''
                     : '';
 
-                  // Quantity
-                  const adetText = colIdx.adet >= 0 ? cells[colIdx.adet]?.textContent?.trim() : '';
+                  // Quantity — value may be in an <input> element, not textContent
+                  let adetText = '';
+                  if (colIdx.adet >= 0) {
+                    const adetCell = cells[colIdx.adet];
+                    const adetInput = adetCell?.querySelector('input');
+                    adetText = adetInput ? adetInput.value : (adetCell?.textContent?.trim() || '');
+                  }
                   const adet = parseInt(adetText) || 1;
 
                   // Price — parse Turkish format ₺1.194,60
