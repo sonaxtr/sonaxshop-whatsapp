@@ -117,7 +117,7 @@ webhookRoutes.post('/api/cart-report', async (req: Request, res: Response) => {
 
     // Fetch ALL carts via paginated SelectSepet
     const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const endDate = new Date().toISOString().split('T')[0];
+    const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // tomorrow to include today's carts
 
     logger.info('Cart report: fetching all carts via pagination...', { startDate, endDate });
     const { xmlPages, totalPages } = await soapClient.selectAllSepetler(startDate, endDate);
