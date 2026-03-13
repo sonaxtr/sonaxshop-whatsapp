@@ -353,121 +353,147 @@ async function handleSyncCarts(port) {
     console.log('[SonaxSync] Rows with phones + cartGuid:', rowsWithPhones.length);
 
     if (rowsWithPhones.length > 0) {
-      // Batch fetch all product details in a single executeScript call
-      // This is MUCH faster than one executeScript per member
       const memberList = rowsWithPhones.map(r => ({ sepetId: r.cartGuid, uyeId: r.uyeId }));
+      const CHUNK_SIZE = 40; // Process 40 members per executeScript call to avoid Chrome timeout
+      let totalFetched = 0;
+      let totalErrors = 0;
 
-      sendProgress(`Urun detaylari cekiliyor (${memberList.length} uye)...`);
+      sendProgress(`Urun detaylari cekiliyor (${memberList.length} uye, ${Math.ceil(memberList.length / CHUNK_SIZE)} parca)...`);
 
-      try {
-        const batchResult = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          world: 'MAIN',
-          func: async (members) => {
-            const results = {}; // uyeId -> products[]
-            const CONCURRENT = 5; // parallel fetches
-            let done = 0;
+      for (let chunkStart = 0; chunkStart < memberList.length; chunkStart += CHUNK_SIZE) {
+        const chunk = memberList.slice(chunkStart, chunkStart + CHUNK_SIZE);
+        const chunkNum = Math.floor(chunkStart / CHUNK_SIZE) + 1;
+        const totalChunks = Math.ceil(memberList.length / CHUNK_SIZE);
 
-            // Parse a single cart detail HTML into products array
-            function parseCartHtml(html) {
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(html, 'text/html');
-              const table = doc.querySelector('table');
-              if (!table) return [];
-              const trs = table.querySelectorAll('tr');
-              if (trs.length < 2) return [];
+        sendProgress(`Urun detaylari: parca ${chunkNum}/${totalChunks} (${chunkStart + 1}-${chunkStart + chunk.length}/${memberList.length} uye)...`);
 
-              const headers = [];
-              trs[0].querySelectorAll('th, td').forEach(c => headers.push(c.textContent.trim().toLowerCase()));
+        try {
+          const batchResult = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: 'MAIN',
+            func: async (members) => {
+              const results = {}; // uyeId -> products[]
+              const errors = []; // track errors for debugging
+              const CONCURRENT = 5;
 
-              const colIdx = {
-                urunAdi: headers.findIndex(h => h.includes('ürün adı') || h.includes('urun adi')),
-                stokKodu: headers.findIndex(h => h.includes('stok kodu') || h.includes('stok')),
-                adet: headers.findIndex(h => h === 'adet'),
-                fiyat: headers.findIndex(h => h === 'fiyat' || h.includes('ürün fiyat')),
-                urunId: headers.findIndex(h => h.includes('ürün id') || h.includes('urun id')),
-                urunKartiId: headers.findIndex(h => h.includes('ürün kartı') || h.includes('urun karti')),
-              };
+              function parseCartHtml(html) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const table = doc.querySelector('table');
+                if (!table) return [];
+                const trs = table.querySelectorAll('tr');
+                if (trs.length < 2) return [];
 
-              const products = [];
-              for (let r = 1; r < trs.length; r++) {
-                const cells = trs[r].querySelectorAll('td');
-                if (cells.length < 3) continue;
+                const headers = [];
+                trs[0].querySelectorAll('th, td').forEach(c => headers.push(c.textContent.trim().toLowerCase()));
 
-                const img = trs[r].querySelector('img');
-                const spotResim = img ? (img.getAttribute('src') || '') : '';
-                const urunAdi = colIdx.urunAdi >= 0 ? (cells[colIdx.urunAdi]?.textContent?.trim() || '') : '';
-                const stokKodu = colIdx.stokKodu >= 0 ? (cells[colIdx.stokKodu]?.textContent?.trim() || '') : '';
+                const colIdx = {
+                  urunAdi: headers.findIndex(h => h.includes('ürün adı') || h.includes('urun adi')),
+                  stokKodu: headers.findIndex(h => h.includes('stok kodu') || h.includes('stok')),
+                  adet: headers.findIndex(h => h === 'adet'),
+                  fiyat: headers.findIndex(h => h === 'fiyat' || h.includes('ürün fiyat')),
+                  urunId: headers.findIndex(h => h.includes('ürün id') || h.includes('urun id')),
+                  urunKartiId: headers.findIndex(h => h.includes('ürün kartı') || h.includes('urun karti')),
+                };
 
-                let adetText = '';
-                if (colIdx.adet >= 0) {
-                  const adetCell = cells[colIdx.adet];
-                  const adetInput = adetCell?.querySelector('input');
-                  adetText = adetInput ? adetInput.value : (adetCell?.textContent?.trim() || '');
+                const products = [];
+                for (let r = 1; r < trs.length; r++) {
+                  const cells = trs[r].querySelectorAll('td');
+                  if (cells.length < 3) continue;
+
+                  const img = trs[r].querySelector('img');
+                  const spotResim = img ? (img.getAttribute('src') || '') : '';
+                  const urunAdi = colIdx.urunAdi >= 0 ? (cells[colIdx.urunAdi]?.textContent?.trim() || '') : '';
+                  const stokKodu = colIdx.stokKodu >= 0 ? (cells[colIdx.stokKodu]?.textContent?.trim() || '') : '';
+
+                  let adetText = '';
+                  if (colIdx.adet >= 0) {
+                    const adetCell = cells[colIdx.adet];
+                    const adetInput = adetCell?.querySelector('input');
+                    adetText = adetInput ? adetInput.value : (adetCell?.textContent?.trim() || '');
+                  }
+                  const adet = parseInt(adetText) || 1;
+
+                  let fiyat = 0;
+                  const fiyatIdx = colIdx.fiyat >= 0 ? colIdx.fiyat : headers.length - 2;
+                  const priceText = cells[fiyatIdx]?.textContent?.trim() || '';
+                  const priceMatch = priceText.match(/(\d{1,3}(?:\.\d{3})*,\d{2})/);
+                  if (priceMatch) fiyat = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+
+                  const urunId = colIdx.urunId >= 0 ? parseInt(cells[colIdx.urunId]?.textContent?.trim()) || 0 : 0;
+                  const urunKartiId = colIdx.urunKartiId >= 0 ? parseInt(cells[colIdx.urunKartiId]?.textContent?.trim()) || 0 : 0;
+
+                  const cleanName = urunAdi.replace(/\s*Ürün Notu\s*:?\s*$/i, '').trim();
+                  if (cleanName) {
+                    products.push({ urunAdi: cleanName, spotResim, fiyat, stokKodu, adet, urunId, urunKartiId, paraBirimi: 'TRY' });
+                  }
                 }
-                const adet = parseInt(adetText) || 1;
+                return products;
+              }
 
-                let fiyat = 0;
-                const fiyatIdx = colIdx.fiyat >= 0 ? colIdx.fiyat : headers.length - 2;
-                const priceText = cells[fiyatIdx]?.textContent?.trim() || '';
-                const priceMatch = priceText.match(/(\d{1,3}(?:\.\d{3})*,\d{2})/);
-                if (priceMatch) fiyat = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
-
-                const urunId = colIdx.urunId >= 0 ? parseInt(cells[colIdx.urunId]?.textContent?.trim()) || 0 : 0;
-                const urunKartiId = colIdx.urunKartiId >= 0 ? parseInt(cells[colIdx.urunKartiId]?.textContent?.trim()) || 0 : 0;
-
-                // Clean product name — remove "Ürün Notu :" suffix
-                const cleanName = urunAdi.replace(/\s*Ürün Notu\s*:?\s*$/i, '').trim();
-                if (cleanName) {
-                  products.push({ urunAdi: cleanName, spotResim, fiyat, stokKodu, adet, urunId, urunKartiId, paraBirimi: 'TRY' });
+              async function fetchOne(m) {
+                try {
+                  const url = `/Admin/UyeSepet.aspx?sepetID=${m.sepetId}&uyeId=${m.uyeId}&forCheckout=true`;
+                  const resp = await fetch(url, { credentials: 'include' });
+                  if (!resp.ok) {
+                    errors.push({ uyeId: m.uyeId, reason: 'HTTP ' + resp.status });
+                    return;
+                  }
+                  const html = await resp.text();
+                  const products = parseCartHtml(html);
+                  if (products.length > 0) {
+                    results[m.uyeId] = products;
+                  }
+                } catch (e) {
+                  errors.push({ uyeId: m.uyeId, reason: e.message });
                 }
               }
-              return products;
+
+              for (let i = 0; i < members.length; i += CONCURRENT) {
+                const batch = members.slice(i, i + CONCURRENT);
+                await Promise.all(batch.map(fetchOne));
+              }
+
+              return { results, errorCount: errors.length, sampleErrors: errors.slice(0, 5) };
+            },
+            args: [chunk],
+          });
+
+          const chunkData = batchResult[0]?.result || {};
+          const productMap = chunkData.results || {};
+          let chunkFetched = 0;
+
+          for (const row of rowsWithPhones) {
+            const products = productMap[row.uyeId];
+            if (products && products.length > 0) {
+              row.products = products;
+              chunkFetched++;
             }
-
-            // Fetch a single member's cart
-            async function fetchOne(m) {
-              try {
-                const url = `/Admin/UyeSepet.aspx?sepetID=${m.sepetId}&uyeId=${m.uyeId}&forCheckout=true`;
-                const resp = await fetch(url, { credentials: 'include' });
-                if (!resp.ok) return;
-                const html = await resp.text();
-                const products = parseCartHtml(html);
-                if (products.length > 0) {
-                  results[m.uyeId] = products;
-                }
-              } catch {}
-              done++;
-            }
-
-            // Process in parallel batches of CONCURRENT
-            for (let i = 0; i < members.length; i += CONCURRENT) {
-              const batch = members.slice(i, i + CONCURRENT);
-              await Promise.all(batch.map(fetchOne));
-            }
-
-            return results;
-          },
-          args: [memberList],
-        });
-
-        const productMap = batchResult[0]?.result || {};
-        let fetchedCount = 0;
-
-        for (const row of rowsWithPhones) {
-          const products = productMap[row.uyeId];
-          if (products && products.length > 0) {
-            row.products = products;
-            fetchedCount++;
           }
-        }
 
-        sendProgress(`Urun detaylari tamamlandi: ${fetchedCount}/${rowsWithPhones.length} uyenin urunleri cekildi.`);
-        console.log('[SonaxSync] Product details fetched for', fetchedCount, 'members');
-      } catch (e) {
-        console.error('[SonaxSync] Batch product fetch error:', e.message);
-        sendProgress('Urun detaylari cekilemedi: ' + e.message);
+          totalFetched += chunkFetched;
+          totalErrors += chunkData.errorCount || 0;
+
+          console.log(`[SonaxSync] Chunk ${chunkNum}/${totalChunks}: ${chunkFetched} products fetched, ${chunkData.errorCount || 0} errors`);
+          if (chunkData.sampleErrors?.length > 0) {
+            console.log('[SonaxSync] Sample errors:', JSON.stringify(chunkData.sampleErrors));
+          }
+
+          sendProgress(`Parca ${chunkNum}/${totalChunks} tamamlandi: ${totalFetched} urun cekildi (toplam)`);
+
+          // Small delay between chunks to avoid overwhelming Ticimax
+          if (chunkStart + CHUNK_SIZE < memberList.length) {
+            await sleep(500);
+          }
+        } catch (e) {
+          console.error(`[SonaxSync] Chunk ${chunkNum} error:`, e.message);
+          sendProgress(`Parca ${chunkNum} hatasi: ${e.message}. Devam ediliyor...`);
+          // Continue with next chunk instead of failing entirely
+        }
       }
+
+      sendProgress(`Urun detaylari tamamlandi: ${totalFetched}/${rowsWithPhones.length} uyenin urunleri cekildi. (${totalErrors} hata)`);
+      console.log('[SonaxSync] Product details complete:', totalFetched, 'fetched,', totalErrors, 'errors');
     }
 
     sendProgress(`Tamamlandi! ${dedupedRows.length} tekil uye, ${rowsWithPhones.filter(r => r.products).length} urun detayli.`);
