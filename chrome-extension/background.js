@@ -322,6 +322,13 @@ async function handleSyncCarts(port) {
 
     console.log('[SonaxSync] Scraping complete. Total rows:', allRows.length);
 
+    // Turkish date parser: DD.MM.YYYY HH:mm:ss -> timestamp
+    const parseTrDate = (s) => {
+      const m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?/);
+      if (!m) return 0;
+      return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime();
+    };
+
     // Deduplicate by uyeId - keep the row with the latest cartDate for each member
     sendProgress('Tekrar eden kayitlar temizleniyor...');
     const uniqueMap = new Map();
@@ -330,24 +337,23 @@ async function handleSyncCarts(port) {
       if (!existing) {
         uniqueMap.set(row.uyeId, row);
       } else {
-        // Keep the one with the latest cart date
-        // Turkish date format: DD.MM.YYYY HH:mm:ss
-        const parseDate = (s) => {
-          const m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2}):?(\d{2})?/);
-          if (!m) return 0;
-          return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime();
-        };
-        if (parseDate(row.cartDate) > parseDate(existing.cartDate)) {
+        if (parseTrDate(row.cartDate) > parseTrDate(existing.cartDate)) {
           uniqueMap.set(row.uyeId, row);
         }
       }
     }
     const dedupedRows = Array.from(uniqueMap.values());
     console.log('[SonaxSync] Deduplication:', allRows.length, '->', dedupedRows.length, 'unique members');
-    sendProgress(`${dedupedRows.length} tekil uye bulundu. Urun detaylari cekiliyor...`);
+
+    // Filter to last 30 days only — older carts are irrelevant
+    const DAYS_LIMIT = 30;
+    const cutoffTime = Date.now() - (DAYS_LIMIT * 24 * 60 * 60 * 1000);
+    const recentRows = dedupedRows.filter(r => parseTrDate(r.cartDate) >= cutoffTime);
+    console.log('[SonaxSync] Date filter (last', DAYS_LIMIT, 'days):', dedupedRows.length, '->', recentRows.length, 'recent members');
+    sendProgress(`${recentRows.length} tekil uye bulundu (son ${DAYS_LIMIT} gun). Urun detaylari cekiliyor...`);
 
     // --- Phase 2: Fetch product details for members with valid phones ---
-    const rowsWithPhones = dedupedRows.filter(
+    const rowsWithPhones = recentRows.filter(
       (r) => r.phone && r.phone.replace(/\D/g, '').length >= 10 && r.cartGuid
     );
     console.log('[SonaxSync] Rows with phones + cartGuid:', rowsWithPhones.length);
@@ -496,7 +502,7 @@ async function handleSyncCarts(port) {
       console.log('[SonaxSync] Product details complete:', totalFetched, 'fetched,', totalErrors, 'errors');
     }
 
-    sendProgress(`Tamamlandi! ${dedupedRows.length} tekil uye, ${rowsWithPhones.filter(r => r.products).length} urun detayli.`);
+    sendProgress(`Tamamlandi! ${recentRows.length} tekil uye (son ${DAYS_LIMIT} gun), ${rowsWithPhones.filter(r => r.products).length} urun detayli.`);
 
     // Close the Ticimax tab
     try {
@@ -507,15 +513,15 @@ async function handleSyncCarts(port) {
     port.postMessage({
       type: 'COMPLETE',
       data: {
-        rows: dedupedRows,
-        totalRecords: dedupedRows.length,
+        rows: recentRows,
+        totalRecords: recentRows.length,
         rawTotal: allRows.length,
         totalPages,
         source: 'extension',
         syncedAt: new Date().toISOString(),
       },
     });
-    console.log('[SonaxSync] COMPLETE message sent with', dedupedRows.length, 'unique rows');
+    console.log('[SonaxSync] COMPLETE message sent with', recentRows.length, 'recent rows (from', dedupedRows.length, 'total)');
   } catch (err) {
     console.error('[SonaxSync] Error in handleSyncCarts:', err);
     // Clean up tab on error
